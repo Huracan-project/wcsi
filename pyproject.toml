@@ -1,0 +1,12 @@
+[project]
+name = "wcsi"
+version = "1.0.0"
+dependencies = [
+  "cartopy",
+  "huracanpy",
+  "matplotlib",
+  "numpy",
+  "pandas",
+  "scipy",
+  "tqdm",
+]
