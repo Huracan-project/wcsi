@@ -97,10 +97,12 @@ def _main(summary, start_year, invests=False):
         hit = matches.id_ibtracs.nunique()
         weak_hit = weak_matches.id_ibtracs.nunique()
         miss = total - hit - weak_hit
-        fa = table_.id_era5.nunique() - hit - weak_hit
+        fa = table_.loc[
+            (table_.id_era5 != -1) & (table_.id_ibtracs == ""), "id_era5"
+        ].nunique()
 
         if invests:
-            invest = table_.loc[table_.id_superbt != "", "id_superbt"].nunique()
+            invest = table_.loc[table_.id_superbt != "", "id_era5"].nunique()
             fa = fa - invest
 
         # Scores
