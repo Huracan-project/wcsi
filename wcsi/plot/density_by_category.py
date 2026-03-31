@@ -9,37 +9,24 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from .. import filters
+
+
+titles = ["Hits (x0.25)", "Misses", "Invests", "False Alarms"]
+bounds = np.array([0, 1, 5, 10, 20, 40, 80, 95])
+norm = BoundaryNorm(boundaries=bounds, ncolors=256)
+
 
 def main():
     table = pd.read_parquet("WCSI_summary_all.parquet")
-    table = table[table.storm_start.dt.year >= 2007]
     table = table[table.id_era5 != -1]
+    table = filters.year(table, 2007)
 
-    # True positive
-    true_positive = table[
-        (table.id_ibtracs != "")
-        & table.WCSI
-        & ~table.weak_match
-    ]
+    hits, weak_hits, misses, false_alarms, invests = filters.categories(
+        table, "WCSI", invests=True
+    )
 
-    false_negative = table[
-        (table.id_ibtracs != "")
-        & ~table.WCSI
-        & ~np.isin(table.id_ibtracs, true_positive.id_ibtracs)
-        & ~table.weak_match
-    ]
-
-    invests = table[(table.id_ibtracs == "") & (table.id_superbt != "") & table.WCSI]
-
-    # False positives
-    false_positives = table[
-        (table.id_ibtracs == "") & (table.id_superbt == "") & table.WCSI
-    ]
-
-    track_ids = [
-        np.unique(t.id_era5)
-        for t in [true_positive, false_negative, invests, false_positives]
-    ]
+    track_ids = [np.unique(t.id_era5) for t in [hits, misses, invests, false_alarms]]
 
     if not Path("density_by_category.nc").exists():
         tracks = huracanpy.load("ERA5_all.nc")
@@ -59,11 +46,6 @@ def main():
     )
 
     axes = axes.flatten()
-
-    titles = ["Hits (x0.25)", "Misses", "Invests", "False Alarms"]
-
-    bounds = np.array([0, 1, 5, 10, 20, 40, 80, 91])
-    norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 
     for n in range(4):
         d = densities.sel(subset=n)
@@ -87,7 +69,7 @@ def main():
     fig.subplots_adjust(bottom=0.15)
     cbar_ax = fig.add_axes((0.1, 0.05, 0.8, 0.05))
     fig.colorbar(im, cax=cbar_ax, orientation="horizontal")
-    fig.suptitle("Track density by category (2007-2024)")
+    fig.suptitle("ERA5 track density by category (2007-2024)")
 
     plt.savefig("fig_track_density_by_category.pdf")
 
