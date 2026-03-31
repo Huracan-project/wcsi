@@ -1,21 +1,29 @@
-from pathlib import Path
-from string import ascii_lowercase
-
-import huracanpy
+from matplotlib.colors import BoundaryNorm
 import matplotlib.pyplot as plt
-from matplotlib_venn import venn3
+from matplotlib_venn import venn3, venn3_circles
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
-import seaborn as sb
-from tqdm import tqdm
+
+from .max_intensity_by_category import bins
+from .matching_by_filter_with_invests import colours, default_labels
+
+
+linestyles = [":", "-"]
+bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 246])
+norm = BoundaryNorm(boundaries=bounds, ncolors=256)
+
+cmap_kwargs = dict(
+    cmap="cubehelix_r",
+    norm=norm,
+)
 
 
 def main(summary):
     sets = []
 
-    is_era5 = summary["H2017-nolat"] & summary["WCSI"] & ~summary["weak_match"]
-    is_jra3q = summary["WCSI_jra3q"]
+    is_era5 = summary["H2017-nolat"] & summary["WCSI"]
+    is_jra3q = summary.id_jra3q != -1
     is_ibtracs = summary.id_ibtracs != ""
     # (100, 010, 110, 001, 101, 011, 111)
     # 100 - Only ERA5
@@ -43,110 +51,110 @@ def main(summary):
 
     fig, axes = plt.subplot_mosaic(
         """
-        12
-        13
+        xxxzbbb
+        xxxzbbb
+        aaazbbb
+        aaazbbb
+        aaazbbb
+        aaazccc
+        aaazccc
+        aaazccc
+        aaazccc
+        yyyzccc
+        yyyzwww
+        yyyz111
+        
         """,
-        figsize=(8, 5),
+        figsize=(8, 6),
     )
 
-    venn3(
+    for ax in ["w", "x", "y", "z"]:
+        axes[ax].set_axis_off()
+
+    v = venn3(
         sets,
         set_labels=["ERA5", "JRA3Q", "IBTrACS"],
         set_colors=["C0", "C1", "C2"],
-        alpha=0.65,
-        ax=axes["1"],
+        alpha=0.99,
+        ax=axes["a"],
     )
 
-    if not Path("matched_lmi.parquet").exists():
-        ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
-        tracks_era5 = huracanpy.load("ERA5_all.nc")
-        tracks_jra3q = huracanpy.load("JRA3Q_nolat-tcident.nc")
-        matched_lmi = match_lmi(ibtracs, tracks_era5, tracks_jra3q)
-        matched_lmi.to_parquet("matched_lmi.parquet")
-    else:
-        matched_lmi = pd.read_parquet("matched_lmi.parquet")
+    for subset in ["101", "011", "111"]:
+        v.get_patch_by_id(subset).set(color=colours["hits"])
+
+    for subset in ["100", "110", "010"]:
+        v.get_patch_by_id(subset).set(color=colours["false_alarms"])
+
+    for subset in ["001"]:
+        v.get_patch_by_id(subset).set(color=colours["misses"])
+
+    for subset in ["010", "100"]:
+        v.get_patch_by_id(subset).set(alpha=0.5)
+
+    for subset in ["101", "011"]:
+        v.get_patch_by_id(subset).set(alpha=0.5)
+
+    matched_lmi = pd.read_parquet("matched_lmi.parquet")
+    matched_lmi = matched_lmi[
+        (matched_lmi.id_jra3q != -1) & (matched_lmi.id_era5 != -1)
+    ]
 
     x = matched_lmi.mslp_ibtracs
-    for dataset, ax in [("era5", axes["2"]), ("jra3q", axes["3"])]:
+    for dataset, ax in [("era5", axes["b"]), ("jra3q", axes["c"])]:
         y = matched_lmi[f"mslp_{dataset}"]
-        sb.kdeplot(x=x, y=y, ax=ax, fill=True)
-        result = linregress(x=x[matched_lmi.year < 1979], y=y[matched_lmi.year < 1979])
-        ax.plot(
-            [870, 1020],
-            result.slope * np.array([870, 1020]) + result.intercept,
-            "C1",
-            label=f"1948-1979 ({result.slope:.3f} $\pm$ {result.stderr:.3f})",
-        )
-        result = linregress(
-            x=x[matched_lmi.year >= 1979], y=y[matched_lmi.year >= 1979]
-        )
-        ax.plot(
-            [870, 1020],
-            result.slope * np.array([870, 1020]) + result.intercept,
-            "C2",
-            label=f"1979-2024 ({result.slope:.3f} $\pm$ {result.stderr:.3f})",
-        )
-        ax.plot(x, y, ".k", alpha=0.5, ms=0.5)
-        ax.plot([870, 1020], [870, 1020], "-k")
-        ax.set(xlim=(870, 1020), ylim=(870, 1020))
 
-    axes["2"].set_xticklabels([])
-    axes["2"].set(xlabel="", ylabel="MSLP ERA5 (hPa)")
-    axes["3"].set(
-        xlabel="MSLP minimum per track in IBTrACS (hPa)", ylabel="MSLP JRA3Q (hPa)"
-    )
-    axes["2"].legend()
-    axes["3"].legend()
+        counts, _, _ = np.histogram2d(x, y, bins=bins)
+        print(counts.max())
+        im = ax.pcolormesh(bins, bins, counts.transpose(), zorder=1, **cmap_kwargs)
 
-    axes["1"].set_title("Matching")
+        for n, (x_, y_, label) in enumerate(
+            [
+                (x[matched_lmi.year < 1979], y[matched_lmi.year < 1979], "1948-1978"),
+                (x[matched_lmi.year >= 1979], y[matched_lmi.year >= 1979], "1979-2024"),
+            ]
+        ):
+            result = linregress(x_, y_)
+            print(result)
+            ax.plot(
+                bins,
+                result.slope * bins + result.intercept,
+                linestyle=linestyles[n],
+                color="C7",
+                label=f"{label} ({result.slope:.3f} $\pm$ {result.stderr:.3f})",
+            )
 
-    for n, label in enumerate(axes):
-        ax = axes[label]
-        ax.text(0.05, 1.05, f"({ascii_lowercase[n]})", transform=ax.transAxes)
+        ax.plot(bins, bins, "-k")
+        ax.set(xlim=(bins[0], bins[-1]), ylim=(bins[0], bins[-1]))
+
+    plt.colorbar(im, cax=axes["1"], orientation="horizontal")
+    axes["b"].set_xticklabels([])
+    axes["b"].set(xlabel="", ylabel="MSLP ERA5 (hPa)")
+    axes["c"].set(xlabel="MSLP IBTrACS (hPa)", ylabel="MSLP JRA3Q (hPa)")
+    axes["b"].legend()
+    axes["c"].legend()
+
+    axes["a"].set_title("Matching\n1979-2024")
+
+    for ax in ["a", "b", "c"]:
+        axes[ax].text(0.01, 0.925, f"({ax})", transform=axes[ax].transAxes)
+
+    for category in ["hits", "false_alarms", "misses"]:
+        axes["y"].fill_betweenx(
+            [np.nan, np.nan],
+            np.nan,
+            np.nan,
+            color=colours[category],
+            label=default_labels[category],
+        )
+    axes["y"].legend(ncol=2, bbox_to_anchor=[1, 1])
 
     fig.suptitle("ERA5 vs JRA3Q")
     plt.savefig("era5_vs_jra3q.pdf")
 
 
-def match_lmi(ibtracs, tracks_era5, tracks_jra3q):
-    ibtracs_tc_lmi = ibtracs.isel(
-        record=np.where((ibtracs.nature == "TS") & ~np.isnan(ibtracs.slp))[0]
-    ).hrcn.get_apex_vals("slp", stat="min")
-
-    track_ids = ibtracs_tc_lmi.track_id.values
-    ibtracs_tc_lmi = ibtracs_tc_lmi.rename(track_id="record").drop_vars("record")
-    ibtracs_tc_lmi = ibtracs_tc_lmi.assign(track_id=("record", track_ids))
-
-    matched_lmi = huracanpy.assess.match(
-        [ibtracs_tc_lmi, tracks_era5, tracks_jra3q],
-        ["ibtracs", "era5", "jra3q"],
-        max_dist=165,
-    )
-    matched_lmi = matched_lmi[matched_lmi.id_ibtracs.astype(str) != "nan"]
-
-    matched_lmi["year"] = np.zeros(len(matched_lmi), dtype=int)
-    matched_lmi["lat"] = np.zeros(len(matched_lmi))
-    for dataset in ["ibtracs", "era5", "jra3q"]:
-        matched_lmi[f"mslp_{dataset}"] = np.zeros(len(matched_lmi))
-
-    for n, row in tqdm(matched_lmi.iterrows()):
-        lmi_ib = ibtracs_tc_lmi.hrcn.sel_id(track_id=row.id_ibtracs)
-        matched_lmi.loc[n, "year"] = lmi_ib.time.dt.year.values[()]
-        matched_lmi.loc[n, "mslp_ibtracs"] = lmi_ib.slp.values[()]
-        matched_lmi.loc[n, "lat"] = lmi_ib.lat.values[()]
-        for dataset, tracks in [("era5", tracks_era5), ("jra3q", tracks_jra3q)]:
-            if ~np.isnan(row[f"id_{dataset}"]):
-                track = tracks.hrcn.sel_id(row[f"id_{dataset}"])
-                track = track.isel(record=np.where(track.time == lmi_ib.time.values)[0])
-                matched_lmi.loc[n, f"mslp_{dataset}"] = track.mslp.values[()]
-
-    matched_lmi = matched_lmi[
-        ~np.isnan(matched_lmi.id_era5) & ~np.isnan(matched_lmi.id_jra3q)
-    ]
-    return matched_lmi
-
-
 if __name__ == "__main__":
+    from .. import filters
+
     summary = pd.read_parquet("WCSI_summary_all.parquet")
-    summary = summary[summary.storm_start.dt.year >= 1979]
+    summary = filters.year(summary, 1979)
     main(summary)
