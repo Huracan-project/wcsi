@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from .. import filters
+
 
 bar_kws = dict(
     width=0.4,
@@ -50,8 +52,9 @@ def main():
 
 def _main(summary, start_year, invests=False):
     subsets = ["all", "H2017-nolat", "H2017", "WCS", "WCSI"]
-    summary = summary[summary.storm_start.dt.year >= start_year]
+
     summary = summary[(summary.id_era5 != -1) | (summary.id_ibtracs != "")]
+    summary = filters.year(summary, start_year)
 
     # Create what looks like a two panel figure
     # The top 3 axes are the first panel, with the top two axes showing a break in the
@@ -102,7 +105,9 @@ def _main(summary, start_year, invests=False):
         ].nunique()
 
         if invests:
-            invest = table_.loc[table_.id_superbt != "", "id_era5"].nunique()
+            invest = table_.loc[
+                (table_.id_superbt != "") & (table_.id_ibtracs == ""), "id_era5"
+            ].nunique()
             fa = fa - invest
 
         # Scores
