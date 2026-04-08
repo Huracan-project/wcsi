@@ -49,6 +49,9 @@ def main():
     superbt = huracanpy.load(source="superbt").rename(
         tccode="nature", vmax="wind", pmin="mslp"
     )
+    superbt["wind"] = (
+        "record", superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values
+    )
     superbt.hrcn.save("superbt.nc")
 
 
