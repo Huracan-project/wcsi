@@ -9,4 +9,8 @@ dependencies = [
   "pandas",
   "scipy",
   "tqdm",
+  "docopt",
 ]
+
+[project.scripts]
+wcsi = "wcsi.scripts.wcsi:main"
