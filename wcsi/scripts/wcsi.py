@@ -2,7 +2,7 @@
 Filter for tracks that are warm core, symmetric, and intensifying (WCSI)
 
 Usage:
-    generate_summary.py <filename_in> <filename_out>
+    wcsi <filename_in> <filename_out>
         [--npoints=<val>]
         [--basin=<str>]
         [--b_threshold=<val>] [--vtl_threshold=<val>] [--vtu_threshold=<val>]
@@ -10,7 +10,7 @@ Usage:
         [--vort_warm_core_threshold=<val>]
         [--filter_size=<val>]
         [--coherent] [--ocean]
-    generate_summary.py (-h | --help)
+    wcsi (-h | --help)
 
 Arguments:
     <filename_in>  The filename containing tracks
