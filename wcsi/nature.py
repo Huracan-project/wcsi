@@ -74,72 +74,19 @@ def wcsi(
 
     for track_id, track in tqdm(tracks.groupby("track_id")):
         # Only storms that are tropical cyclones at some point in their lifecycle
-        # Cyclone Phase Space
-        try:
-            tc = wcs(
-                np.abs(track.cps_b),
-                track.cps_vtl,
-                track.cps_vtu,
-                filter_size=filter_size,
-                b_threshold=b_threshold,
-                vtl_threshold=vtl_threshold,
-                vtu_threshold=vtu_threshold,
-            )
-        except (ValueError, AttributeError):
-            # If no CPS thresholds are set, start with True everywhere
-            tc = np.ones(len(track.time), dtype=bool)
-
-        # Minimum vorticity
-        if vort_threshold is not None:
-            tc = tc & (track.relative_vorticity.sel(pressure=850) > vort_threshold)
-
-        # Intensification rate
-        if intensification_threshold is not None:
-            tc = tc & (
-                np.gradient(
-                    uniform_filter1d(
-                        track.relative_vorticity.sel(pressure=850),
-                        size=filter_size,
-                        mode="nearest",
-                    )
-                )
-                > intensification_threshold
-            )
-
-        # Coherent
-        if coherent:
-            # Check for NaNs and mask value in TRACK (1e25)
-            tc = tc & ~(
-                np.isnan(track.relative_vorticity) | (track.relative_vorticity == 1e25)
-            ).any(dim="pressure")
-
-        # Vorticity based warm core threshold
-        if vort_warm_core_threshold is not None:
-            tc = tc & (
-                (
-                    track.relative_vorticity.sel(pressure=850)
-                    - track.relative_vorticity.sel(pressure=200)
-                )
-                > vort_warm_core_threshold
-            )
-
-        # Over ocean
-        if ocean:
-            track.hrcn.add_is_ocean()
-            tc = tc & track.is_ocean
-
-        # Check that applied criteria are satisfied for consective npoints
-        track["is_tc"] = tc
-        if npoints > 1:
-            category_consecutive = [
-                (k, sum(1 for i in g)) for k, g in groupby(track.is_tc.values)
-            ]
-
-            idx = 0
-            for category, count in category_consecutive:
-                if category and count < npoints:
-                    track.is_tc[idx : idx + count] = False
-                idx += count
+        track["is_tc"] = wcsi_track(
+            track=track,
+            npoints=npoints,
+            b_threshold=b_threshold,
+            vtl_threshold=vtl_threshold,
+            vtu_threshold=vtu_threshold,
+            vort_threshold=vort_threshold,
+            vort_warm_core_threshold=vort_warm_core_threshold,
+            intensification_threshold=intensification_threshold,
+            coherent=coherent,
+            ocean=ocean,
+            filter_size=filter_size,
+        )
 
         if basin is not None:
             is_tc = (track.is_tc & (track.basin == basin)).values.any()
@@ -171,6 +118,85 @@ def wcsi(
     tracks = xr.concat(tc_tracks, dim="record")
 
     return tracks, summary
+
+
+def wcsi_track(
+    track: xr.Dataset,
+    npoints: int = 4,
+    b_threshold=15,
+    vtl_threshold=0,
+    vtu_threshold=0,
+    vort_threshold=6,
+    vort_warm_core_threshold=None,
+    intensification_threshold=0,
+    coherent=True,
+    ocean=False,
+    filter_size=5,
+) -> xr.Dataset:
+    # Cyclone Phase Space
+    try:
+        tc = wcs(
+            np.abs(track.cps_b),
+            track.cps_vtl,
+            track.cps_vtu,
+            filter_size=filter_size,
+            b_threshold=b_threshold,
+            vtl_threshold=vtl_threshold,
+            vtu_threshold=vtu_threshold,
+        )
+    except (ValueError, AttributeError):
+        # If no CPS thresholds are set, start with True everywhere
+        tc = np.ones(len(track.time), dtype=bool)
+
+    # Minimum vorticity
+    if vort_threshold is not None:
+        tc = tc & (track.relative_vorticity.sel(pressure=850) > vort_threshold)
+
+    # Intensification rate
+    if intensification_threshold is not None:
+        tc = tc & (
+            np.gradient(
+                uniform_filter1d(
+                    track.relative_vorticity.sel(pressure=850),
+                    size=filter_size,
+                    mode="nearest",
+                )
+            )
+            > intensification_threshold
+        )
+
+    # Coherent
+    if coherent:
+        # Check for NaNs and mask value in TRACK (1e25)
+        tc = tc & ~(
+            np.isnan(track.relative_vorticity) | (track.relative_vorticity == 1e25)
+        ).any(dim="pressure")
+
+    # Vorticity based warm core threshold
+    if vort_warm_core_threshold is not None:
+        tc = tc & (
+            (
+                track.relative_vorticity.sel(pressure=850)
+                - track.relative_vorticity.sel(pressure=200)
+            )
+            > vort_warm_core_threshold
+        )
+
+    # Over ocean
+    if ocean:
+        tc = tc & track.hrcn.get_is_ocean()
+
+    # Check that applied criteria are satisfied for consective npoints
+    if npoints > 1:
+        category_consecutive = [(k, sum(1 for i in g)) for k, g in groupby(tc)]
+
+        idx = 0
+        for category, count in category_consecutive:
+            if category and count < npoints:
+                tc[idx : idx + count] = False
+            idx += count
+
+    return tc
 
 
 def wcs(
