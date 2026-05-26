@@ -75,7 +75,11 @@ def wcsi(
     for track_id, track in tqdm(tracks.groupby("track_id")):
         # Only storms that are tropical cyclones at some point in their lifecycle
         track["is_tc"] = wcsi_track(
-            track=track,
+            track.cps_b,
+            track.cps_vtl,
+            track.cps_vtu,
+            track.relative_vorticity,
+            track.hrcn.get_is_ocean() if ocean else None,
             npoints=npoints,
             b_threshold=b_threshold,
             vtl_threshold=vtl_threshold,
@@ -85,7 +89,8 @@ def wcsi(
             intensification_threshold=intensification_threshold,
             coherent=coherent,
             ocean=ocean,
-            filter_size=filter_size,
+            filter_size_cps=filter_size,
+            filter_size_vorticity=filter_size,
         )
 
         if basin is not None:
@@ -121,7 +126,12 @@ def wcsi(
 
 
 def wcsi_track(
-    track: xr.Dataset,
+    cps_b=None,
+    cps_vtl=None,
+    cps_vtu=None,
+    relative_vorticity=None,
+    is_ocean=None,
+    *,
     npoints: int = 4,
     b_threshold=15,
     vtl_threshold=0,
@@ -131,60 +141,59 @@ def wcsi_track(
     intensification_threshold=0,
     coherent=True,
     ocean=False,
-    filter_size=5,
+    filter_size_cps=5,
+    filter_size_vorticity=5,
 ) -> xr.Dataset:
     # Cyclone Phase Space
     try:
         tc = wcs(
-            np.abs(track.cps_b),
-            track.cps_vtl,
-            track.cps_vtu,
-            filter_size=filter_size,
+            np.abs(cps_b),
+            cps_vtl,
+            cps_vtu,
+            filter_size=filter_size_cps,
             b_threshold=b_threshold,
             vtl_threshold=vtl_threshold,
             vtu_threshold=vtu_threshold,
         )
     except (ValueError, AttributeError):
         # If no CPS thresholds are set, start with True everywhere
-        tc = np.ones(len(track.time), dtype=bool)
+        tc = np.ones(len(relative_vorticity), dtype=bool)
 
     # Minimum vorticity
     if vort_threshold is not None:
-        tc = tc & (track.relative_vorticity.sel(pressure=850) > vort_threshold)
+        tc = tc & (relative_vorticity.sel(pressure=850) > vort_threshold)
 
     # Intensification rate
     if intensification_threshold is not None:
-        tc = tc & (
-            np.gradient(
-                uniform_filter1d(
-                    track.relative_vorticity.sel(pressure=850),
-                    size=filter_size,
-                    mode="nearest",
-                )
+        vo850 = relative_vorticity.sel(pressure=850)
+        if filter_size_vorticity is not None:
+            vo850 = uniform_filter1d(
+                vo850,
+                size=filter_size_vorticity,
+                mode="nearest",
             )
-            > intensification_threshold
-        )
+        tc = tc & (np.gradient(vo850) > intensification_threshold)
 
     # Coherent
     if coherent:
         # Check for NaNs and mask value in TRACK (1e25)
-        tc = tc & ~(
-            np.isnan(track.relative_vorticity) | (track.relative_vorticity == 1e25)
-        ).any(dim="pressure")
+        tc = tc & ~(np.isnan(relative_vorticity) | (relative_vorticity == 1e25)).any(
+            dim="pressure"
+        )
 
     # Vorticity based warm core threshold
     if vort_warm_core_threshold is not None:
         tc = tc & (
             (
-                track.relative_vorticity.sel(pressure=850)
-                - track.relative_vorticity.sel(pressure=200)
+                relative_vorticity.sel(pressure=850)
+                - relative_vorticity.sel(pressure=200)
             )
             > vort_warm_core_threshold
         )
 
     # Over ocean
     if ocean:
-        tc = tc & track.hrcn.get_is_ocean()
+        tc = tc & is_ocean
 
     # Check that applied criteria are satisfied for consective npoints
     if npoints > 1:
@@ -249,7 +258,7 @@ def wcs(
     ):
         raise ValueError("Need to pass at least one variable and threshold")
 
-    if filter_size:
+    if filter_size is not None:
         if b_threshold and b is not None:
             b = uniform_filter1d(b, size=filter_size, mode="nearest")
         if vtl_threshold and vtl is not None:
