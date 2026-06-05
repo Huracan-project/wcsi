@@ -1,7 +1,7 @@
 from itertools import groupby
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 import pandas as pd
 from scipy.ndimage import uniform_filter1d
 from tqdm import tqdm
@@ -12,15 +12,15 @@ def wcsi(
     tracks: xr.Dataset,
     npoints: int = 4,
     basin=None,
-    b_threshold=15,
-    vtl_threshold=0,
-    vtu_threshold=0,
-    vort_threshold=6,
-    vort_warm_core_threshold=None,
-    intensification_threshold=0,
-    coherent=True,
-    ocean=False,
-    filter_size=5,
+    b_threshold: float | None = 15,
+    vtl_threshold: float | None = 0,
+    vtu_threshold: float | None = 0,
+    vort_threshold: float | None = 6,
+    vort_warm_core_threshold: float | None = None,
+    intensification_threshold: float | None = 0,
+    coherent: bool = True,
+    ocean: bool = False,
+    filter_size: int = 5,
 ) -> tuple[xr.Dataset, pd.DataFrame]:
     """
 
@@ -133,21 +133,21 @@ def wcsi_track(
     is_ocean=None,
     *,
     npoints: int = 4,
-    b_threshold=15,
-    vtl_threshold=0,
-    vtu_threshold=0,
-    vort_threshold=6,
-    vort_warm_core_threshold=None,
-    intensification_threshold=0,
-    coherent=True,
-    ocean=False,
-    filter_size_cps=5,
-    filter_size_vorticity=5,
-) -> xr.Dataset:
+    b_threshold: float | None = 15,
+    vtl_threshold: float | None = 0,
+    vtu_threshold: float | None = 0,
+    vort_threshold: float | None = 6,
+    vort_warm_core_threshold: float | None = None,
+    intensification_threshold: float | None = 0,
+    coherent: bool = True,
+    ocean: bool = False,
+    filter_size_cps: int | None = 5,
+    filter_size_vorticity: int | None = 5,
+) -> NDArray[np.bool]:
     # Cyclone Phase Space
     try:
         tc = wcs(
-            np.abs(cps_b),
+            np.abs(cps_b) if cps_b is not None else None,
             cps_vtl,
             cps_vtu,
             filter_size=filter_size_cps,
@@ -156,15 +156,21 @@ def wcsi_track(
             vtu_threshold=vtu_threshold,
         )
     except (ValueError, AttributeError):
-        # If no CPS thresholds are set, start with True everywhere
-        tc = np.ones(len(relative_vorticity), dtype=bool)
+        if relative_vorticity is not None:
+            # If no CPS thresholds are set, start with True everywhere
+            tc = np.ones(len(relative_vorticity), dtype=bool)
+        else:
+            msg = (
+                "Must specifify at least one of the CPS parameters or relativevorticity"
+            )
+            raise ValueError(msg)
 
     # Minimum vorticity
-    if vort_threshold is not None:
+    if vort_threshold is not None and relative_vorticity is not None:
         tc = tc & (relative_vorticity.sel(pressure=850) > vort_threshold)
 
     # Intensification rate
-    if intensification_threshold is not None:
+    if intensification_threshold is not None and relative_vorticity is not None:
         vo850 = relative_vorticity.sel(pressure=850)
         if filter_size_vorticity is not None:
             vo850 = uniform_filter1d(
@@ -175,14 +181,14 @@ def wcsi_track(
         tc = tc & (np.gradient(vo850) > intensification_threshold)
 
     # Coherent
-    if coherent:
+    if coherent and relative_vorticity is not None:
         # Check for NaNs and mask value in TRACK (1e25)
         tc = tc & ~(np.isnan(relative_vorticity) | (relative_vorticity == 1e25)).any(
             dim="pressure"
         )
 
     # Vorticity based warm core threshold
-    if vort_warm_core_threshold is not None:
+    if vort_warm_core_threshold is not None and relative_vorticity is not None:
         tc = tc & (
             (
                 relative_vorticity.sel(pressure=850)
@@ -192,7 +198,7 @@ def wcsi_track(
         )
 
     # Over ocean
-    if ocean:
+    if ocean and is_ocean is not None:
         tc = tc & is_ocean
 
     # Check that applied criteria are satisfied for consective npoints
@@ -209,15 +215,15 @@ def wcsi_track(
 
 
 def wcs(
-    b: ArrayLike | None,
-    vtl: ArrayLike | None,
-    vtu: ArrayLike | None,
+    b: NDArray[np.floating] | None,
+    vtl: NDArray[np.floating] | None,
+    vtu: NDArray[np.floating] | None,
     *,
     filter_size: int | None = None,
-    b_threshold: float | bool = 10,
-    vtl_threshold: float | bool = 0,
-    vtu_threshold: float | bool = 0,
-) -> ArrayLike:
+    b_threshold: float | None = 10,
+    vtl_threshold: float | None = 0,
+    vtu_threshold: float | None = 0,
+) -> NDArray[np.bool]:
     """Identify where a track is a tropical cyclone by the cyclone phase space
     definition (warm core and symmetric)
 
@@ -259,19 +265,19 @@ def wcs(
         raise ValueError("Need to pass at least one variable and threshold")
 
     if filter_size is not None:
-        if b_threshold and b is not None:
+        if b_threshold is not None and b is not None:
             b = uniform_filter1d(b, size=filter_size, mode="nearest")
-        if vtl_threshold and vtl is not None:
+        if vtl_threshold is not None and vtl is not None:
             vtl = uniform_filter1d(vtl, size=filter_size, mode="nearest")
-        if vtu_threshold and vtu is not None:
+        if vtu_threshold is not None and vtu is not None:
             vtu = uniform_filter1d(vtu, size=filter_size, mode="nearest")
 
     condition = []
-    if b_threshold and b is not None:
+    if b_threshold is not None and b is not None:
         condition.append(b <= b_threshold)
-    if vtl_threshold and vtl is not None:
+    if vtl_threshold is not None and vtl is not None:
         condition.append(vtl > vtl_threshold)
-    if vtu_threshold and vtu is not None:
+    if vtu_threshold is not None and vtu is not None:
         condition.append(vtu > vtu_threshold)
 
     if len(condition) == 1:
@@ -285,11 +291,11 @@ def wcs(
 
 
 def nature(
-    b: ArrayLike[float],
-    vtl: ArrayLike[float],
-    vtu: ArrayLike[float],
-    vort: ArrayLike[float],
-    is_tc: ArrayLike[bool],
+    b: NDArray[np.floating],
+    vtl: NDArray[np.floating],
+    vtu: NDArray[np.floating],
+    vort: NDArray[np.floating],
+    is_tc: NDArray[np.bool],
     *,
     b_threshold: float = 15,
     vtl_threshold: float = 0,
@@ -298,7 +304,7 @@ def nature(
     min_count: int = 4,
     et: bool = False,
     smooth: bool = False,
-) -> np.ndarray[str]:
+) -> NDArray[np.str_]:
     """Derive a nature tag from the cyclone structure
 
     TC - Tropical Cyclone
