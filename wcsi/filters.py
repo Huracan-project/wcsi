@@ -5,7 +5,7 @@ Filters for the summary table of WCSI and matching across datasets
 import numpy as np
 
 
-def year(table, start_year):
+def year(table, start_year, end_year=None):
 
     # Select by ibtracs year
     early_ibtracs = (
@@ -17,6 +17,17 @@ def year(table, start_year):
     # For rows without IBTrACS, take the start of ERA5 track
     early_era5 = table[table.id_ibtracs == ""].storm_start.dt.year < start_year
     table = table.drop(early_era5[early_era5].index)
+
+    if end_year is not None:
+        late_ibtracs = (
+            table[table.id_ibtracs != ""].id_ibtracs.str.slice(0, 4).astype(int)
+            > end_year
+        )
+        table = table.drop(late_ibtracs[late_ibtracs].index)
+
+        # For rows without IBTrACS, take the start of ERA5 track
+        late_era5 = table[table.id_ibtracs == ""].storm_start.dt.year > end_year
+        table = table.drop(late_era5[early_era5].index)
 
     return table
 
