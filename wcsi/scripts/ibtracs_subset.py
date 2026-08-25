@@ -38,8 +38,9 @@ def main():
     ibtracs = ibtracs.drop_vars("wmo_agency")
 
     # Select for tropical storms/6-hourly data
-    ibtracs_6h_ts, ibtracs_dropped, ibtracs_summary = drop_tracks(ibtracs)
+    ibtracs_6h_ts, ibtracs_dropped = drop_tracks(ibtracs)
 
+    ibtracs_summary = generate_summary(ibtracs_6h_ts, ibtracs_dropped)
     ibtracs_summary.to_parquet("ibtracs_summary.parquet")
 
     ibtracs_6h_ts.hrcn.save("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
@@ -84,75 +85,80 @@ def drop_tracks(ibtracs):
     track_ids = track_ids[~np.isin(track_ids, np.unique(ibtracs_6h_ts.track_id))]
     ibtracs_dropped = ibtracs.hrcn.sel_id(track_ids)
 
+    return ibtracs_6h_ts, ibtracs_dropped
+
+
+def generate_summary(ibtracs_6h_ts, ibtracs_dropped):
     # Create a summary of tracks and why they are/aren't dropped
-    # Do they have tropical nature/are they shorted than 1 day
+    # Do they have tropical nature/are they shorter than 1 day
     track_ids = np.unique(ibtracs_6h_ts.track_id)
     track_nature = np.full(len(track_ids), "TS", dtype="U2")
-    isshort = np.zeros(len(track_ids), dtype=bool)
+    nt_6h = ibtracs_6h_ts["time"].groupby(ibtracs_6h_ts.track_id).count().values
 
     track_ids_dropped = np.unique(ibtracs_dropped.track_id)
-    track_nature_dropped = np.full(len(track_ids_dropped), "", dtype="U2")
-    istc_dropped = np.array(
-        [
-            (track.nature == "TS").any()
-            for track_id, track in ibtracs_dropped.groupby("track_id")
-        ]
-    )
-    isnr_dropped = np.array(
-        [
-            (track.nature == "NR").all()
-            for track_id, track in ibtracs_dropped.groupby("track_id")
-        ]
-    )
-    track_nature_dropped[istc_dropped] = "TS"
-    track_nature_dropped[isnr_dropped] = "NR"
+    track_nature_dropped = []
+    nt_6h_dropped = []
 
-    isshort_dropped = (
-        (
-            ibtracs_dropped.hrcn.get_apex_vals("time").time
-            - ibtracs_dropped.hrcn.get_gen_vals().time
-        )
-        / np.timedelta64(1, "h")
-    ) < 18
+    for track_id in track_ids_dropped:
+        track = ibtracs_dropped.hrcn.sel_id(track_id)
+        if (track.nature == "TS").any():
+            track_nature_dropped.append("TS")
+        elif (track.nature == "NR").all():
+            track_nature_dropped.append("NR")
+        else:
+            track_nature_dropped.append("")
+
+        nt_6h_dropped.append(track.isel(record=track.time.dt.hour % 6 == 0).time.size)
 
     ibtracs_summary = pd.DataFrame(
         data=dict(
             id_ibtracs=np.concatenate([track_ids, track_ids_dropped]),
             ibtracs_nature=np.concatenate([track_nature, track_nature_dropped]),
-            ibtracs_short=np.concatenate([isshort, isshort_dropped]),
+            ibtracs_points_6h=np.concatenate([nt_6h, nt_6h_dropped]),
+            ibtracs_dropped=np.concatenate(
+                [
+                    np.zeros(len(track_ids), dtype=bool),
+                    np.ones(len(track_ids_dropped), dtype=bool),
+                ]
+            ),
         )
     )
 
-    return ibtracs_6h_ts, ibtracs_dropped, ibtracs_summary
+    return ibtracs_summary
 
 
 def print_stats(ibtracs_summary):
     for year in [1979, 2007]:
         summary = ibtracs_summary[
-            ibtracs_summary.ibtracs_id.str.slice(0, 4).astype(int) >= year
+            ibtracs_summary.id_ibtracs.str.slice(0, 4).astype(int) >= year
         ]
-        dropped = summary[(summary.ibtracs_nature != "TS") | summary.ibtracs_short]
+        dropped = summary[summary.ibtracs_dropped]
+        isshort = dropped.ibtracs_points_6h < 4
         print("Since", year)
         print(len(dropped), "dropped")
         print(
-            np.count_nonzero((summary.ibtracs_nature == "TS") & summary.ibtracs_short),
+            np.count_nonzero((dropped.ibtracs_nature == "TS") & isshort),
             "Short tropical storms",
         )
         print(
-            np.count_nonzero((summary.ibtracs_nature == "NR") & summary.ibtracs_short),
+            np.count_nonzero((dropped.ibtracs_nature == "NR") & isshort),
             "Short with no recorded nature",
         )
         print(
-            np.count_nonzero((summary.ibtracs_nature == "") & summary.ibtracs_short),
+            np.count_nonzero((dropped.ibtracs_nature == "") & isshort),
             "Short with other nature",
         )
         print(
-            np.count_nonzero((summary.ibtracs_nature == "NR") & ~summary.ibtracs_short),
+            np.count_nonzero((dropped.ibtracs_nature == "NR") & ~isshort),
             "Long with no recorded nature",
         )
         print(
-            np.count_nonzero((summary.ibtracs_nature == "") & ~summary.ibtracs_short),
+            np.count_nonzero((dropped.ibtracs_nature == "") & ~isshort),
             "Long with other recorded nature",
+        )
+        print(
+            np.count_nonzero((dropped.ibtracs_nature == "TS") & ~isshort),
+            "Long tropical storm",
         )
 
 
