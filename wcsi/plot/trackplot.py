@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import uniform_filter1d
 from tqdm import tqdm
+import xarray as xr
 
 from ..nature import nature
+from .. import filters
 
 projection = EqualEarth
 transform = Geodetic()
@@ -28,6 +30,19 @@ extents = dict(
     SP=[120, 300, -90, 0],
     SA=[-120, 60, -90, 0],
 )
+
+# extents = dict(
+#     NATL=[-120, 60, 0, 90],
+#     MED=[-120, 60, 0, 90],
+#     ENP=[-180, 0, 0, 90],
+#     CP=[120, 300, 0, 90],
+#     WNP=[60, 240, 0, 90],
+#     NI=[0, 180, 0, 90],
+#     SI=[0, 180, -90, 0],
+#     AUS=[60, 240, -90, 0],
+#     SP=[120, 300, -90, 0],
+#     SA=[-120, 60, -90, 0],
+# )
 
 # Colour for each cyclone category
 natures = dict(
@@ -330,13 +345,13 @@ def track_overview(track=None, ib=None):
 
 def guess_basin(track, ib):
     if track is not None:
-        basin = track.hrcn.get_basin().values[track.vorticity.argmax()]
+        basin = track.hrcn.get_basin().values[np.argmax(track.vorticity.values)]
     else:
         try:
-            basin = ib.hrcn.get_basin().values[ib.wind.argmax()]
+            basin = ib.hrcn.get_basin().values[np.argmax(ib.wind.values)]
         except ValueError:
             try:
-                basin = ib.hrcn.get_basin().values[ib.mslp.argmin()]
+                basin = ib.hrcn.get_basin().values[np.argmin(ib.mslp.values)]
             except ValueError:
                 basin = ib.hrcn.get_basin().values[0]
 
@@ -420,13 +435,22 @@ def showlimit(ax, x, y, ylim, above=True, color="k"):
 
 def main():
     tracks = huracanpy.load("ERA5_all_nature.nc")
-    ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
+    ibtracs = xr.concat(
+        [
+            huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc"),
+            huracanpy.load("IBTrACS_1940-2024_dropped.nc"),
+        ],
+        dim="record",
+    )
     superbt = huracanpy.load("superbt.nc")
 
     table = pd.read_parquet("WCSI_summary_all.parquet")
 
     # Specific tracks for WCSI paper
     _main(tracks, ibtracs, superbt, table)
+
+    # Plot all tracks
+    plot_all(tracks, ibtracs, superbt, table)
 
 
 def _main(tracks, ibtracs, superbt, table):
@@ -469,6 +493,50 @@ def _main(tracks, ibtracs, superbt, table):
         fig, ax = track_overview(track)
         ax["A"].set_title(f"False Positive {titles[m]} ({row.storm_start.year})")
         plt.savefig(f"false-positive_{row.id_era5}_{row.storm_start.year}.pdf")
+        plt.close()
+
+def plot_all(tracks, ibtracs, superbt, table):
+    hits, weak_hits, misses, false_alarms, false_alarm_invests = filters.categories(
+        table, "WCSI", invests=True
+    )
+
+    for prefix, subset in [("hit", hits), ("weak_hit", weak_hits)]:
+        for n, row in tqdm(subset.iterrows()):
+            track = tracks.hrcn.sel_id(row.id_era5)
+            ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
+            fig, axes = track_overview(track=track, ib=ib)
+            fig.savefig(f"{prefix}_{row.id_ibtracs}_{row.id_era5}.png")
+            plt.close()
+
+    # Show full set of natures for misses
+    natures_ib["TS"] = ("Tropical", "C1")
+    natures_ib["ET"] = ("Extratropical", "C0")
+    natures_ib["MX"] = ("Mixture", "C4")
+    natures_ib["NR"] = ("Not reported", "C3")
+    natures_ib["SS"] = ("Subtropical", "C6")
+    natures_ib["DS"] = ("Disturbance", "C7")
+
+    for n, row in tqdm(misses.iterrows(), total=len(misses)):
+        ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
+        if row.id_era5 == -1:
+            track = None
+        else:
+            track = tracks.hrcn.sel_id(row.id_era5)
+        fig, axes = track_overview(track=track, ib=ib)
+        fig.savefig(f"misses_{row.id_ibtracs}_{row.id_era5}.png")
+        plt.close()
+
+    for n, row in tqdm(false_alarm_invests.iterrows()):
+        track = tracks.hrcn.sel_id(row.id_era5)
+        ib = superbt.hrcn.sel_id(row.id_superbt)
+        fig, axes = track_overview(track=track, ib=ib)
+        fig.savefig(f"invest_{row.id_superbt}_{row.id_era5}.png")
+        plt.close()
+
+    for n, row in tqdm(false_alarms.iterrows()):
+        track = tracks.hrcn.sel_id(row.id_era5)
+        fig, axes = track_overview(track=track)
+        fig.savefig(f"false_alarm_{row.id_era5}.png")
         plt.close()
 
 
