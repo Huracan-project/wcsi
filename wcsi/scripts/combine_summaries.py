@@ -8,19 +8,23 @@ import xarray as xr
 # when merging
 columns = {
     "id_ibtracs": (str, ""),
-    "id_superbt": (str, ""),
+    "id_superbt_era5": (str, ""),
+    "id_superbt_jra3q": (str, ""),
+    "id_superbt_syclops": (str, ""),
     "id_era5": (int, -1),
+    "id_syclops": (int, -1),
     "id_jra3q": (int, -1),
     "H2017-nolat": (bool, False),
     "H2017": (bool, False),
     "WCS": (bool, False),
     "WCSI": (bool, False),
-    "WCSI_jra3q": (bool, False),
     "temp": (int, 0),
     "ibtracs_nature": (str, ""),
-    "ibtracs_short": (bool, False),
+    "ibtracs_points_6h": (int, 0),
+    "ibtracs_dropped": (bool, False),
     "weak_match": (bool, False),
     "weak_match_jra3q": (bool, False),
+    "weak_match_syclops": (bool, False),
 }
 
 
@@ -34,10 +38,15 @@ def main():
     summary = match_ibtracs(summary)
     summary.to_parquet("WCSI-IBTrACS_summary.parquet")
 
+    # Add SyCLoPS tracks
+    print("Add SyCLoPS")
+    summary = add_syclops(summary)
+    summary.to_parquet("WCSI-IBTrACS-SyCLoPS_summary.parquet")
+
     # Add WCSI information for JRA3Q
     print("Add JRA3Q")
     summary = add_jra3q(summary)
-    summary.to_parquet("WCSI-ERA5-IBTrACS-JRA3Q_summary")
+    summary.to_parquet("WCSI-IBTrACS-SyCLoPS-JRA3Q_summary.parquet")
 
     # Look for matches between invests and ERA5 tracks that don't already have a match
     # in IBTrACS
@@ -57,7 +66,7 @@ def combine_filters():
     # Could match up track ID original, but matching the origin of track is quick and
     # easy enough
     print("Matching genesis points")
-    tracks = load_genesis_points("ERA5_all.nc")
+    tracks = load_genesis_points("ERA5_all_nature.nc")
     tracks_tcident = load_genesis_points("ERA5_tcident.nc")
     tracks_nolat_tcident = load_genesis_points("ERA5_nolat-tcident.nc")
 
@@ -84,7 +93,7 @@ def match_ibtracs(summary):
     ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
     ibtracs_dropped = huracanpy.load("IBTrACS_1940-2024_dropped.nc")
     ibtracs = xr.concat([ibtracs, ibtracs_dropped], dim="record")
-    tracks_era5 = huracanpy.load("ERA5_all.nc")
+    tracks_era5 = huracanpy.load("ERA5_all_nature.nc")
 
     matching_summary = _match_ibtracs(
         tracks_era5, ibtracs, ibtracs_summary, label="era5"
@@ -100,6 +109,7 @@ def match_ibtracs(summary):
 
 def _match_ibtracs(tracks, ibtracs, ibtracs_summary, label):
     # Within 1-degree for 1 day
+    print("Matching IBTrACS")
     matches = huracanpy.assess.match(
         [tracks, ibtracs],
         [label, "ibtracs"],
@@ -110,8 +120,11 @@ def _match_ibtracs(tracks, ibtracs, ibtracs_summary, label):
     )
 
     # Allow single timestep matches for short IBTrACS tracks
+    print("IBTrACS short tracks")
     ibtracs_short = ibtracs.hrcn.sel_id(
-        ibtracs_summary.id_ibtracs[ibtracs_summary.ibtracs_short]
+        ibtracs_summary.id_ibtracs[
+            (ibtracs_summary.ibtracs_points_6h < 4) & (ibtracs_summary.id_ibtracs != "")
+        ]
     )
     matches_short = huracanpy.assess.match(
         [tracks, ibtracs_short],
@@ -122,12 +135,13 @@ def _match_ibtracs(tracks, ibtracs, ibtracs_summary, label):
     matches = pd.concat([matches, matches_short])
 
     # Try weak matches for remaining tracks
+    print("IBTrACS weak matches")
     track_ids = np.unique(ibtracs.track_id)
     ibtracs_unmatched = ibtracs.hrcn.sel_id(
         track_ids[~np.isin(track_ids, matches.id_ibtracs)]
     )
     matches_weak = huracanpy.assess.match(
-        [tracks, ibtracs],
+        [tracks, ibtracs_unmatched],
         [label, "ibtracs"],
         max_dist=None,
         mean_dist=440,
@@ -152,43 +166,55 @@ def fix_columns(df):
 
 
 def add_jra3q(summary):
-    tracks_jra3q = huracanpy.load("JRA3Q_nolat-tcident.nc")
-    summary_jra3q = pd.read_parquet("JRA3Q_nolat-tcident_WCSI.parquet")
-
     # Only analyse WCSI subset of JRA3Q here
-    summary_jra3q = summary_jra3q[summary_jra3q.is_tc]
-    tracks_jra3q = tracks_jra3q.hrcn.sel_id(summary_jra3q.track_id)
+    tracks_jra3q = huracanpy.load("JRA3Q_nolat-nwc-tcident_WCSI_nature.nc")
 
-    ibtracs_summary = pd.read_parquet("ibtracs_summary.parquet")
     ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
     ibtracs_dropped = huracanpy.load("IBTrACS_1940-2024_dropped.nc")
     ibtracs = xr.concat([ibtracs, ibtracs_dropped], dim="record")
+    ibtracs_summary = pd.read_parquet("ibtracs_summary.parquet")
 
+    return _add_other(summary, tracks_jra3q, "jra3q", ibtracs, ibtracs_summary)
+
+
+def add_syclops(summary):
+    syclops = huracanpy.load(
+        "SyCLoPS_classified_ERA5_1940_2024_6hr.parquet", rename=dict(tid="track_id")
+    )
+    syclops = syclops.isel(record=syclops.track_info.str.contains("Track_TC"))
+
+    ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
+    ibtracs_dropped = huracanpy.load("IBTrACS_1940-2024_dropped.nc")
+    ibtracs = xr.concat([ibtracs, ibtracs_dropped], dim="record")
+    ibtracs_summary = pd.read_parquet("ibtracs_summary.parquet")
+
+    return _add_other(summary, syclops, "syclops", ibtracs, ibtracs_summary)
+
+
+def _add_other(summary, tracks, label, ibtracs, ibtracs_summary):
     matching_summary = _match_ibtracs(
-        tracks_jra3q, ibtracs, ibtracs_summary, label="jra3q"
-    ).rename(columns=dict(weak_match="weak_match_jra3q"))[
-        ["id_jra3q", "id_ibtracs", "weak_match_jra3q"]
+        tracks, ibtracs, ibtracs_summary, label=label
+    ).rename(columns=dict(weak_match=f"weak_match_{label}"))[
+        [f"id_{label}", "id_ibtracs", f"weak_match_{label}"]
     ]
 
     summary = summary.merge(matching_summary, on="id_ibtracs", how="outer")
 
-    # Use strict matching between ERA5 and JRA3Q
+    # Use strict matching for ERA5
     # Within 1-degree for 1 day
-    # Only looking for remaining tracks that are WCSI for ERA5 and JRA3Q but don't
-    # match IBTrACS
-    tracks_era5 = huracanpy.load("ERA5_all.nc")
+    # Only looking for remaining tracks that are WCSI for ERA5 and don't match IBTrACS
+    tracks_era5 = huracanpy.load("ERA5_all_nature.nc")
     tracks_era5 = tracks_era5.hrcn.sel_id(
         summary.id_era5[summary.WCSI & (summary.id_ibtracs == "")]
     )
-    tracks_jra3q = tracks_jra3q.hrcn.sel_id(
-        summary_jra3q.track_id[
-            ~np.isin(summary_jra3q.track_id, matching_summary.id_jra3q)
-        ]
-    )
+
+    track_ids = np.unique(tracks.track_id)
+    track_ids = track_ids[~np.isin(track_ids, np.unique(summary[f"id_{label}"]))]
+    tracks = tracks.hrcn.sel_id(track_ids)
 
     matches_reanalysis = huracanpy.assess.match(
-        [tracks_era5, tracks_jra3q],
-        ["era5", "jra3q"],
+        [tracks_era5, tracks],
+        ["era5", "label"],
         min_overlap=4,
         max_dist=165,
         consecutive_overlap=True,
@@ -206,12 +232,12 @@ def add_jra3q(summary):
         summary.loc[index, "id_jra3q"] = rows.iloc[0].id_jra3q
 
     # Add info for JRA3Q tracks not included by any matching
-    summary_jra3q = (
-        summary_jra3q[~np.isin(summary_jra3q.track_id, np.unique(summary.id_jra3q))]
-        .rename(columns=dict(track_id="id_jra3q"))
-        .drop(columns=["is_tc"])
-    )
-    summary = pd.concat([summary, summary_jra3q])
+    track_ids = track_ids[~np.isin(track_ids, np.unique(matches_reanalysis.id_jra3q))]
+    for track_id in track_ids:
+        idx = summary.index[-1] + 1
+        track = tracks.hrcn.sel_id(track_id)
+        summary.loc[idx, f"id_{label}"] = track_id
+        summary.loc[idx, "storm_start"] = pd.to_datetime(track.time.values)[0]
 
     fix_columns(summary)
 
@@ -220,18 +246,51 @@ def add_jra3q(summary):
 
 def match_invests(summary):
     tracks_superbt = huracanpy.load("superbt.nc")
-    tracks_era5 = huracanpy.load("ERA5_all.nc")
+    nt_superbt = tracks_superbt[["time", "track_id"]].groupby("track_id").count()
+    superbt_short = tracks_superbt.hrcn.sel_id(nt_superbt.track_id[nt_superbt.time < 4])
 
-    # Smaller distance but for only one timestep minimum because invest tracks can be
-    # short
-    matches = huracanpy.assess.match(
-        [tracks_superbt, tracks_era5],
-        ["superbt", "era5"],
-        max_dist=165,
-        distance_method="geod",
-    )[["id_era5", "id_superbt"]]
+    for filename, label in [
+        ("ERA5_all_nature.nc", "era5"),
+        ("JRA3Q_nolat-nwc-tcident_WCSI_nature.nc", "jra3q"),
+        ("SyCLoPS_classified_ERA5_1940_2024_6hr.parquet", "syclops"),
+    ]:
+        print(f"Matching invests to {label}")
+        tracks = huracanpy.load(filename, rename=dict(tid="track_id"))
 
-    summary = summary.merge(matches, on="id_era5", how="outer")
+        # Only consider tracks that are not already matched with IBTrACS
+        track_ids = np.unique(
+            summary.loc[
+                (summary.id_ibtracs == "") & (summary[f"id_{label}"] != -1),
+                f"id_{label}",
+            ]
+        )
+        tracks = tracks.hrcn.sel_id(track_ids)
+
+        matches = huracanpy.assess.match(
+            [tracks_superbt, tracks],
+            ["superbt", label],
+            min_overlap=4,
+            max_dist=165,
+            consecutive_overlap=True,
+            distance_method="geod",
+        )[[f"id_{label}", f"id_superbt_{label}"]]
+
+        # Allow for shorter length invests
+        matches_short = huracanpy.assess.match(
+            [superbt_short, tracks],
+            ["superbt", label],
+            max_dist=165,
+            distance_method="geod",
+        )[[f"id_{label}", f"id_superbt_{label}"]]
+
+        matches = pd.concat([matches, matches_short])
+
+        # Only include one match per track to avoid expanding the table
+        # Only important whether it matches at least one invest
+        matches = matches.drop_duplicates(subset=f"id_{label}")
+
+        summary = summary.merge(matches, on=f"id_{label}", how="outer")
+
     fix_columns(summary)
 
     return summary
