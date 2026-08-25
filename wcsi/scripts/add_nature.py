@@ -10,6 +10,7 @@ Usage:
         [--min_count=<val>]
         [--et]
         [--smooth]
+        [--npoints=<val>]
     wcsi-nature (-h | --help)
 
 Arguments:
@@ -36,7 +37,7 @@ Arguments:
     --smooth
         If the nature changes to another nature and bag again for less than min_count
         points, label it as the original nature [default: False]
-    --npoints
+    --npoints=<val>
         If "is_tc" is not already included in the tracks, this argument is passed to the
         WCSI identification [default: 4]
 
