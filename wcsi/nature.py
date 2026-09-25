@@ -1,32 +1,46 @@
 from itertools import groupby
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-import pandas as pd
 from scipy.ndimage import uniform_filter1d
-from tqdm import tqdm
 import xarray as xr
 
 
 def wcsi(
-    tracks: xr.Dataset,
+    track_id: NDArray[Any],
+    cps_b: NDArray[np.floating] | None = None,
+    cps_vtl: NDArray[np.floating] | None = None,
+    cps_vtu: NDArray[np.floating] | None = None,
+    relative_vorticity: xr.DataArray | None = None,
+    is_ocean: NDArray[np.bool] | None = None,
+    closed_mslp: NDArray[np.bool] | None = None,
+    track_basin: NDArray[np.str_] | None = None,
+    *,
     npoints: int = 4,
-    basin=None,
+    basin: str | None = None,
     b_threshold: float | None = 15,
     vtl_threshold: float | None = 0,
     vtu_threshold: float | None = 0,
     vort_threshold: float | None = 6,
     vort_warm_core_threshold: float | None = None,
     intensification_threshold: float | None = 0,
-    coherent: bool = True,
+    coherent: bool = False,
     ocean: bool = False,
     filter_size: int = 5,
-) -> tuple[xr.Dataset, pd.DataFrame]:
+) -> NDArray[np.bool]:
     """
 
     Parameters
     ----------
-    tracks
+    track_id
+    cps_b
+    cps_vtl
+    cps_vtu
+    relative_vorticity
+    is_ocean
+    closed_mslp
+    track_basin
     npoints
         Number of consecutive points that all criteria need to be met
     basin
@@ -58,99 +72,30 @@ def wcsi(
     -------
     The subset of tracks that meet the criteria and a table summarising all the tracks
     """
-    summary = []
-    tc_tracks = []
 
-    if basin is not None:
-        # Skip tracks that have max intensity in a different basin if filtering by
-        # basin
-        if "basin" not in tracks:
-            tracks = tracks.hrcn.add_basin()
+    # Apply smoothing
+    idx, inverse = padded_index(track_id, pad=filter_size // 2, pad_location="inner")
 
-        tracks_max_intensity = tracks.hrcn.get_apex_vals("vorticity")
-        tracks = tracks.hrcn.sel_id(
-            tracks_max_intensity.track_id[tracks_max_intensity.basin == basin]
-        )
+    if cps_b is not None:
+        cps_b = uniform_filter1d(np.abs(cps_b)[idx], size=filter_size, mode="nearest")[
+            inverse
+        ]
+    if cps_vtl is not None:
+        cps_vtl = uniform_filter1d(cps_vtl[idx], size=filter_size, mode="nearest")[
+            inverse
+        ]
+    if cps_vtu is not None:
+        cps_vtu = uniform_filter1d(cps_vtu[idx], size=filter_size, mode="nearest")[
+            inverse
+        ]
 
-    for track_id, track in tqdm(tracks.groupby("track_id")):
-        # Only storms that are tropical cyclones at some point in their lifecycle
-        track["is_tc"] = wcsi_track(
-            track.cps_b,
-            track.cps_vtl,
-            track.cps_vtu,
-            track.relative_vorticity,
-            track.hrcn.get_is_ocean() if ocean else None,
-            npoints=npoints,
-            b_threshold=b_threshold,
-            vtl_threshold=vtl_threshold,
-            vtu_threshold=vtu_threshold,
-            vort_threshold=vort_threshold,
-            vort_warm_core_threshold=vort_warm_core_threshold,
-            intensification_threshold=intensification_threshold,
-            coherent=coherent,
-            ocean=ocean,
-            filter_size_cps=filter_size,
-            filter_size_vorticity=filter_size,
-        )
-
-        if basin is not None:
-            is_tc = (track.is_tc & (track.basin == basin)).values.any()
-        else:
-            is_tc = track.is_tc.values.any()
-
-        if is_tc:
-            tc_tracks.append(track)
-
-        times = pd.to_datetime(track.time)
-        summary.append(
-            pd.DataFrame(
-                [
-                    dict(
-                        track_id=track.track_id.values[0],
-                        storm_start=times[0],
-                        storm_end=times[-1],
-                        origin_lat=track.lat.data[0],
-                        origin_lon=track.lon.data[0],
-                        end_lat=track.lat.data[-1],
-                        end_lon=track.lon.data[-1],
-                        is_tc=is_tc,
-                    )
-                ]
-            )
-        )
-
-    summary = pd.concat(summary, ignore_index=True)
-    tracks = xr.concat(tc_tracks, dim="record")
-
-    return tracks, summary
-
-
-def wcsi_track(
-    cps_b=None,
-    cps_vtl=None,
-    cps_vtu=None,
-    relative_vorticity=None,
-    is_ocean=None,
-    *,
-    npoints: int = 4,
-    b_threshold: float | None = 15,
-    vtl_threshold: float | None = 0,
-    vtu_threshold: float | None = 0,
-    vort_threshold: float | None = 6,
-    vort_warm_core_threshold: float | None = None,
-    intensification_threshold: float | None = 0,
-    coherent: bool = True,
-    ocean: bool = False,
-    filter_size_cps: int | None = 5,
-    filter_size_vorticity: int | None = 5,
-) -> NDArray[np.bool]:
     # Cyclone Phase Space
     try:
         tc = wcs(
-            np.abs(cps_b) if cps_b is not None else None,
+            cps_b,
             cps_vtl,
             cps_vtu,
-            filter_size=filter_size_cps,
+            filter_size=None,
             b_threshold=b_threshold,
             vtl_threshold=vtl_threshold,
             vtu_threshold=vtu_threshold,
@@ -161,30 +106,27 @@ def wcsi_track(
             tc = np.ones(len(relative_vorticity), dtype=bool)
         else:
             msg = (
-                "Must specifify at least one of the CPS parameters or relativevorticity"
+                "Must specify at least one of the CPS parameters or relative vorticity"
             )
             raise ValueError(msg)
 
     # Minimum vorticity
     if vort_threshold is not None and relative_vorticity is not None:
-        tc = tc & (relative_vorticity.sel(pressure=850) > vort_threshold)
+        tc = tc & (relative_vorticity.sel(pressure=850).values > vort_threshold)
 
     # Intensification rate
     if intensification_threshold is not None and relative_vorticity is not None:
         vo850 = relative_vorticity.sel(pressure=850)
-        if filter_size_vorticity is not None:
-            vo850 = uniform_filter1d(
-                vo850,
-                size=filter_size_vorticity,
-                mode="nearest",
-            )
-        tc = tc & (np.gradient(vo850) > intensification_threshold)
+        vo850 = uniform_filter1d(vo850[idx], size=filter_size, mode="nearest")[inverse]
+        tc = tc & (np.gradient(vo850[idx])[inverse] > intensification_threshold)
 
     # Coherent
     if coherent and relative_vorticity is not None:
         # Check for NaNs and mask value in TRACK (1e25)
-        tc = tc & ~(np.isnan(relative_vorticity) | (relative_vorticity == 1e25)).any(
-            dim="pressure"
+        tc = tc & (
+            ~(relative_vorticity.isnull() | (relative_vorticity == 1e25))
+            .any(dim="pressure")
+            .values
         )
 
     # Vorticity based warm core threshold
@@ -193,7 +135,7 @@ def wcsi_track(
             (
                 relative_vorticity.sel(pressure=850)
                 - relative_vorticity.sel(pressure=200)
-            )
+            ).values
             > vort_warm_core_threshold
         )
 
@@ -201,15 +143,20 @@ def wcsi_track(
     if ocean and is_ocean is not None:
         tc = tc & is_ocean
 
-    # Check that applied criteria are satisfied for consective npoints
+    # Check that applied criteria are satisfied for consecutive npoints
     if npoints > 1:
-        category_consecutive = [(k, sum(1 for i in g)) for k, g in groupby(tc)]
+        tc = mask_short(track_id, tc, min_count=npoints)
 
-        idx = 0
-        for category, count in category_consecutive:
-            if category and count < npoints:
-                tc[idx : idx + count] = False
-            idx += count
+    # Criteria applied after count check
+    # Only at least one WCSI point needs to meet the criteria
+    # Closed MSLP contour. e.g. intensify as a tropical vortex, develop MSLP minimum
+    # then weaken
+    # Basin - Develops as a TC in one basin then enters another basin, still as a TC
+    if closed_mslp is not None:
+        tc = tc & closed_mslp
+
+    if basin is not None and track_basin is not None:
+        tc = tc & (track_basin == basin)
 
     return tc
 
@@ -354,7 +301,6 @@ def nature(
     Returns
     -------
 
-
     """
     nat = np.zeros(len(vort), dtype="U2")
 
@@ -459,3 +405,61 @@ def smooth_excursions(nat, min_count):
                 nat_consecutive[m] = (new_nat, count)
 
         idx += count
+
+
+def mask_short(track_id, istc, min_count=4):
+    # First and last index of sequences where istc=True
+    # Must use an array padded with zeros, otherwise a starting or ending
+    # True will be missed
+    _, idx = np.unique(track_id, return_index=True)
+    idx = np.concat([idx, [len(track_id)]])
+    istc_pad = np.insert(istc, idx, False)
+
+    start = np.where(np.diff(istc_pad.astype(int)) == 1)[0] + 1
+    end = np.where(np.diff(istc_pad.astype(int)) == -1)[0]
+    length = end - start + 1
+    short = length < min_count
+
+    # Index of where to set istc=True to false instead
+    if short.any():
+        idx_short = np.concat(
+            [np.arange(s, e + 1) for s, e in zip(start[short], end[short])]
+        )
+        istc_pad[idx_short] = False
+
+    # Remove padding values
+    return np.delete(istc_pad, idx + np.arange(len(idx)))
+
+
+def padded_index(track_id, pad=1, pad_location="inner", pad_method="constant"):
+    # Get the locations of where to add padded vales
+    # idx_pad = First index of each track
+    _, idx_pad = np.unique(track_id, return_index=True)
+
+    # Boolean array to get back to original length array from padded array
+    inverse = np.ones(len(track_id), dtype=bool)
+
+    if pad_location in ["inner", "outer"]:
+        # Inner indices are always padded with twice the pad amount (start and end of tracks)
+        # Apply to inverse first otherwise it is always inserted to the left of the
+        # index (needs to be right of start, left of end)
+        idx_pad = idx_pad[1:]
+        inverse = np.insert(inverse, np.repeat(idx_pad, pad * 2), False)
+        idx_pad = np.sort(np.concat([idx_pad, idx_pad - 1]))
+
+        if pad_location == "outer":
+            idx_pad = np.concat([[0], idx_pad, [len(track_id) - 1]])
+            inverse = np.concat([[False] * pad, inverse, [False] * pad])
+
+    elif pad_location in ["start", "end"]:
+        if pad_location == "end":
+            # Shift to last point of each track
+            idx_pad = np.concat([idx_pad[1:] - 1, [len(track_id) - 1]])
+        inverse = np.insert(inverse, np.repeat(idx_pad, pad), False)
+
+    # Incread padding width
+    idx_pad = np.repeat(idx_pad, pad)
+
+    idx = np.insert(np.arange(len(track_id)), idx_pad, idx_pad)
+
+    return idx, inverse
