@@ -3,7 +3,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import uniform_filter1d
+from scipy.ndimage import convolve1d
 import xarray as xr
 
 
@@ -27,7 +27,7 @@ def wcsi(
     intensification_threshold: float | None = 0,
     coherent: bool = False,
     ocean: bool = False,
-    filter_size: int = 5,
+    filter_size: int | None = 5,
 ) -> NDArray[np.bool]:
     """
 
@@ -74,20 +74,22 @@ def wcsi(
     """
 
     # Apply smoothing
-    idx, inverse = padded_index(track_id, pad=filter_size // 2, pad_location="inner")
+    if filter_size is not None and filter_size > 1:
+        idx, inverse = padded_index(
+            track_id, pad=filter_size // 2, pad_location="inner"
+        )
 
-    if cps_b is not None:
-        cps_b = uniform_filter1d(np.abs(cps_b)[idx], size=filter_size, mode="nearest")[
-            inverse
-        ]
-    if cps_vtl is not None:
-        cps_vtl = uniform_filter1d(cps_vtl[idx], size=filter_size, mode="nearest")[
-            inverse
-        ]
-    if cps_vtu is not None:
-        cps_vtu = uniform_filter1d(cps_vtu[idx], size=filter_size, mode="nearest")[
-            inverse
-        ]
+        # Use convolve 1d instead of uniform_filter1d
+        # Running mean in uniform_filter1d means NaNs or large masked values ruin the
+        # result for the rest of the array
+        # (see https://github.com/scipy/scipy/issues/7818)
+        kernel = np.ones(filter_size)
+        if cps_b is not None:
+            cps_b = convolve1d(np.abs(cps_b)[idx], kernel)[inverse] / filter_size
+        if cps_vtl is not None:
+            cps_vtl = convolve1d(cps_vtl[idx], kernel)[inverse] / filter_size
+        if cps_vtu is not None:
+            cps_vtu = convolve1d(cps_vtu[idx], kernel)[inverse] / filter_size
 
     # Cyclone Phase Space
     try:
@@ -117,7 +119,13 @@ def wcsi(
     # Intensification rate
     if intensification_threshold is not None and relative_vorticity is not None:
         vo850 = relative_vorticity.sel(pressure=850)
-        vo850 = uniform_filter1d(vo850[idx], size=filter_size, mode="nearest")[inverse]
+        if filter_size is not None and filter_size > 1:
+            # Index for filtering has already been calculated
+            vo850 = convolve1d(vo850[idx], kernel)[inverse] / filter_size
+        else:
+            # Still need a padded index for gradient calculation, but it has not been
+            # calculated if the filter size is unused
+            idx, inverse = padded_index(track_id, pad=1, pad_location="inner")
         tc = tc & (np.gradient(vo850[idx])[inverse] > intensification_threshold)
 
     # Coherent
@@ -212,12 +220,13 @@ def wcs(
         raise ValueError("Need to pass at least one variable and threshold")
 
     if filter_size is not None:
+        kernel = np.ones(filter_size)
         if b_threshold is not None and b is not None:
-            b = uniform_filter1d(b, size=filter_size, mode="nearest")
+            b = convolve1d(b, kernel) / filter_size
         if vtl_threshold is not None and vtl is not None:
-            vtl = uniform_filter1d(vtl, size=filter_size, mode="nearest")
+            vtl = convolve1d(vtl, kernel) / filter_size
         if vtu_threshold is not None and vtu is not None:
-            vtu = uniform_filter1d(vtu, size=filter_size, mode="nearest")
+            vtu = convolve1d(vtu, kernel) / filter_size
 
     condition = []
     if b_threshold is not None and b is not None:
