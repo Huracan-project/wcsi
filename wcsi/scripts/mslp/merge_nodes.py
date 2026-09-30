@@ -9,12 +9,12 @@ from tqdm import tqdm
 import xarray as xr
 
 
-def main():
+def main(tracks_fname, nodes_fname, start_year):
     # Split by year due to memory use
-    for year in tqdm(range(1940, 2024 + 1)):
-        tracks = huracanpy.load("ERA5_all_nature.nc")
+    for year in tqdm(range(start_year, 2024 + 1)):
+        tracks = huracanpy.load(tracks_fname)
         tracks = tracks.isel(record=tracks.time.dt.year == year)
-        nodes = load_nodefile("mslp-nodes.csv")
+        nodes = load_nodefile(nodes_fname)
         nodes = nodes[nodes.time.dt.year == year]
 
         tracks_df = tracks[["track_id", "lon", "lat", "time"]].to_dataframe()
@@ -54,14 +54,14 @@ def main():
         tracks.mslp_minima_lon.loc[merged.record.values] = merged.lon_y
         tracks.mslp_minima_lat.loc[merged.record.values] = merged.lat_y
 
-        tracks.to_netcdf(f"ERA5_all_nature-mslp_{year}.nc")
+        tracks.to_netcdf(f"{tracks_fname.split('.')[0]}_{year}.nc")
 
     tracks = []
-    for year in tqdm(range(1940, 2024 + 1)):
-        tracks.append(xr.open_dataset(f"ERA5_all_nature-mslp_{year}.nc"))
+    for year in tqdm(range(start_year, 2024 + 1)):
+        tracks.append(xr.open_dataset(f"{tracks_fname.split('.')[0]}_{year}.nc"))
 
     tracks = xr.concat(tracks, dim="record").sortby(["track_id", "time"])
-    huracanpy.save(tracks, "ERA5_all_nature-mslp.nc")
+    huracanpy.save(tracks, f"{tracks_fname.split('.')[0]}-mslp.nc")
 
 
 def load_nodefile(filename):
@@ -107,4 +107,5 @@ def remove_duplicates_by_distance(df, subset):
 
 
 if __name__ == "__main__":
-    main()
+    main("ERA5_all.nc", "era5_mslp-nodes.csv", start_year=1940)
+    main("JRA3Q_nolat-nwc-tcident.nc", "jra3q_mslp-nodes.csv", start_year=1948)
