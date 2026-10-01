@@ -1,6 +1,7 @@
+from prometheus_client.metrics_core import SummaryMetricFamily
 from matplotlib.colors import BoundaryNorm
 import matplotlib.pyplot as plt
-from matplotlib_venn import venn3, venn3_circles
+from matplotlib_venn import venn3
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
@@ -19,11 +20,11 @@ cmap_kwargs = dict(
 )
 
 
-def main(summary):
+def main(summary, matched_lmi):
     sets = []
 
-    is_era5 = summary["H2017-nolat"] & summary["WCSI"]
-    is_jra3q = summary.id_jra3q != -1
+    is_era5 = summary["WCSI"] & ~summary["weak_match"]
+    is_jra3q = (summary.id_jra3q != -1) & ~summary["weak_match_jra3q"]
     is_ibtracs = summary.id_ibtracs != ""
     # (100, 010, 110, 001, 101, 011, 111)
     # 100 - Only ERA5
@@ -94,7 +95,6 @@ def main(summary):
     for subset in ["101", "011"]:
         v.get_patch_by_id(subset).set(alpha=0.5)
 
-    matched_lmi = pd.read_parquet("matched_lmi.parquet")
     matched_lmi = matched_lmi[
         (matched_lmi.id_jra3q != -1) & (matched_lmi.id_era5 != -1)
     ]
@@ -153,8 +153,9 @@ def main(summary):
 
 
 if __name__ == "__main__":
-    from .. import filters
+    from wcsi.summary import filters
 
     summary = pd.read_parquet("WCSI_summary_all.parquet")
     summary = filters.year(summary, 1979)
-    main(summary)
+    matched_lmi = pd.read_parquet("matched_lmi.parquet")
+    main(summary, matched_lmi)

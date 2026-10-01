@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 def main():
     ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
-    tracks_era5 = huracanpy.load("ERA5_all.nc")
-    tracks_jra3q = huracanpy.load("JRA3Q_nolat-tcident.nc")
+    tracks_era5 = huracanpy.load("ERA5.nc")
+    tracks_jra3q = huracanpy.load("JRA3Q.nc")
     matched_lmi = match_lmi(ibtracs, tracks_era5, tracks_jra3q)
     matched_lmi.to_parquet("matched_lmi.parquet")
 
