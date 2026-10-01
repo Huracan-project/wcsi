@@ -1,5 +1,7 @@
 wcsi/data/
 
+_autosummary/
+
 # Copied from https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
