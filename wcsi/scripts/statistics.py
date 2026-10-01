@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.stats import binomtest
 import xarray as xr
 
-from .. import filters
+from wcsi.summary import filters
 
 
 def main():

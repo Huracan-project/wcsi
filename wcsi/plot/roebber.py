@@ -36,7 +36,9 @@ def main():
         handles=[
             Line2D([0], [0], color="k", linestyle="", marker="v", label="1979-2024"),
             Line2D([0], [0], color="k", linestyle="", marker="s", label="2007-2024"),
-            Line2D([0], [0], color="k", linestyle="--", marker="", label="Invests"),
+            Line2D(
+                [0], [0], color="k", linestyle="", marker="D", label="Excluding Invests"
+            ),
         ],
         loc="upper right",
     )
@@ -70,7 +72,14 @@ def main():
                 Line2D(
                     [0], [0], color="k", linestyle="", marker="s", label="2007-2024"
                 ),
-                Line2D([0], [0], color="k", linestyle="--", marker="", label="Invests"),
+                Line2D(
+                    [0],
+                    [0],
+                    color="k",
+                    linestyle="",
+                    marker="D",
+                    label="Excluding Invests",
+                ),
             ],
             loc=[0.015, 0.2],
         )
@@ -101,10 +110,9 @@ def main():
             columnspacing=0.5,
         )
 
-    axes[0].set(xlabel="", title="Global stats by subset")
-    axes[1].set(xlabel="", ylabel="", title="WCSI (ERA5) by Basin")
-    fig1.text(0.52, 0.0, "1 - FAR", ha="center")
-    fig1.savefig("roebber_2panel.png")
+    axes[0].set(xlabel="1 - FAR", title="Global stats by subset")
+    axes[1].set(xlabel="1 - FAR", ylabel="", title="WCSI (ERA5) by Basin")
+    fig1.savefig("roebber_2panel.pdf")
     plt.close(fig1)
 
 
@@ -137,15 +145,19 @@ def _main(stats, ax, marker="v", color=None):
                 ],
                 yerr=[[row.pod - row.pod_low], [row.pod_high - row.pod]],
                 color=c,
-                marker=marker,
+                marker="D",
                 mec="k",
                 capsize=3,
             )
-            ax.plot([1 - row.far, 1 - row.far_invest], [row.pod, row.pod], f"--{c}")
+            ax.plot(
+                [1 - row.far, 1 - row.far_invest],
+                [row.pod, row.pod],
+                f"-{c}",
+                linewidth=5,
+                alpha=0.25,
+            )
 
     ax.set(xlabel="1 - FAR", ylabel="POD", xlim=[0.5, 1], ylim=[0.5, 1])
-
-    return
 
 
 def roebber_diagram(ax):
