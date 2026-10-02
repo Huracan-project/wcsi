@@ -1,20 +1,23 @@
-from itertools import groupby
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from .ragged import padded_index, uniform_filter1d
+
 
 def nature(
+    track_id: NDArray[Any],
     b: NDArray[np.floating],
     vtl: NDArray[np.floating],
     vtu: NDArray[np.floating],
-    vort: NDArray[np.floating],
-    is_tc: NDArray[np.bool],
+    vortex: NDArray[np.bool],
+    wcsi: NDArray[np.bool],
     *,
     b_threshold: float = 15,
     vtl_threshold: float = 0,
     vtu_threshold: float = 0,
-    vort_threshold: float = 6,
+    filter_size=5,
     min_count: int = 4,
     et: bool = False,
     smooth: bool = False,
@@ -22,7 +25,7 @@ def nature(
     """Derive a nature tag from the cyclone structure
 
     - ``"TC"`` - Tropical Cyclone
-    - ``"Vo"`` - Weak Vortex
+    - ``"Vo"`` - Vortex
     - ``"BC"`` - Baroclinic
     - ``"Tr"`` - Trough
     - ``"MV"`` - Mid-level vortex
@@ -41,10 +44,11 @@ def nature(
         Cyclone phase space low-level warm core
     vtu
         Cyclone phase space upper-level warm core
-    vort
-        850hPa vorticity
-    is_tc
-        Points previously used to identify the cyclone as tropical cyclone (e.g. WCSI)
+    vortex
+        Array saying whether each point is a vortex or cyclone. e.g. is there an
+        associated closed MSLP contour
+    wcsi
+        Points previously used to identify the cyclone as tropical cyclone
     b_threshold
         The threshold of the asymmetry parameter, below which is considered to be a
         tropical cyclone
@@ -54,9 +58,6 @@ def nature(
     vtu_threshold
         The threshold of the upper-level warm-core parameter, above which is considered
         to be a tropical cyclone
-    vort_threshold
-        The minimum threshold for 850-hPa vorticity, below which is considered as a
-        weak vortex
     min_count
         Number of
     et
@@ -70,62 +71,59 @@ def nature(
     -------
 
     """
-    nat = np.zeros(len(vort), dtype="U2")
+    nat = np.zeros(len(wcsi), dtype="U2")
 
-    # Too weak = vortex
-    weak = vort < vort_threshold
-    nat[weak] = "Vo"
+    # No closed MSLP - vortex
+    nat[vortex] = "Vo"
 
     # WCSI label as tropical cyclone
-    nat[is_tc] = "TC"
+    # Any gaps less that min_count fill in as TC also
+    wcsi, start_wcsi, end_wcsi = smooth_excursions(track_id, wcsi, min_count=min_count)
+    nat[wcsi] = "TC"
 
     # Other CPS categories
+    # Apply filtering
+    if filter_size is not None and filter_size > 1:
+        idx, inverse = padded_index(
+            track_id, pad=filter_size // 2, pad_location="outer"
+        )
+
+        if b is not None:
+            b = uniform_filter1d(
+                track_id, np.abs(b), size=filter_size, idx=idx, inverse=inverse
+            )
+        if vtl is not None:
+            vtl = uniform_filter1d(
+                track_id, vtl, size=filter_size, idx=idx, inverse=inverse
+            )
+        if vtu is not None:
+            vtu = uniform_filter1d(
+                track_id, vtu, size=filter_size, idx=idx, inverse=inverse
+            )
+
     symmetric = b <= b_threshold
     warm_core = vtl > vtl_threshold
     trough = vtu <= vtu_threshold
 
     # Any Warm core/symmetric periods adjacent to TC are also TC
-    # Label as tropical storm for now
-    nat[(nat == "") & (b <= b_threshold) & (vtl > vtl_threshold)] = "TS"
-    nat_consecutive = [(k, sum(1 for _ in g)) for k, g in groupby(nat)]
-    idx = 0
-    for m, (nat_, count) in enumerate(nat_consecutive):
-        if nat_ == "TS":
-            # Allow for <1 day excursions between TC-TS
-            idx_start = max(0, idx - min_count)
-            if (nat[idx_start : idx + count] == "TC").any():
-                nat[idx_start : idx + count] = "TC"
+    # First fill in any WCS gaps less than min_count
+    wcs = (nat == "") & symmetric & warm_core
+    wcs, start_wcs, end_wcs = smooth_excursions(track_id, wcs, min_count=min_count)
 
-            idx_end = min(len(nat), idx + count + min_count)
-            if (nat[idx + count : idx_end] == "TC").any():
-                nat[idx:idx_end] = "TC"
-
-        idx += count
-    nat[nat == "TS"] = ""
-
-    # Extratropical transition
-    # Look after the last TC point for ET
-    if et:
-        idx = np.where(nat == "TC")[0]
-        if len(idx) > 0:
-            idx = idx[-1] + 1
-            new_idx = fill_next_nature(
-                nat, ~symmetric & warm_core & ~weak, "ET", idx, min_count
-            )
-            if new_idx >= idx + min_count:
-                idx = new_idx
-                new_idx = fill_next_nature(
-                    nat, ~symmetric & ~warm_core & ~weak, "BC", idx, min_count
-                )
-                if new_idx >= idx + min_count:
-                    idx = new_idx
-                    fill_next_nature(nat, warm_core & ~weak, "WS", idx, min_count)
-                else:
-                    # If nothing was labelled as baroclinic following ET, remove ET
-                    nat[np.isin(nat, ["ET", "BC"])] = ""
-            else:
-                # ET lasted less than min_count remove ET
-                nat[nat == "ET"] = ""
+    # Look for sequences where WCSI joins WCS
+    # Since WCS and WCSI has already filled gaps in, any new sequences found will be
+    # joins between WCS and WCSI
+    start_wcs = np.concat([start_wcsi, start_wcs])
+    end_wcs = np.concat([end_wcsi, end_wcs])
+    idx = np.argsort(start_wcs)
+    joined, start_wcs, end_wcs = smooth_excursions(
+        track_id,
+        np.zeros(len(track_id), dtype=bool),
+        min_count=min_count,
+        starts=start_wcs[idx],
+        ends=end_wcs[idx],
+    )
+    nat[joined] = "TC"
 
     # Label remaining unlabelled sections
     # Asymmetric = baroclinic
@@ -137,38 +135,51 @@ def nature(
     # Warm core symmetric not TC (decaying)
     nat[(nat == "")] = "Ot"
 
-    if smooth:
-        smooth_excursions(nat, min_count)
-
     return nat
 
 
-def fill_next_nature(nat, condition, label, idx, min_count):
-    while idx < len(nat) and condition[idx]:
-        nat[idx] = label
-        idx += 1
+def smooth_excursions(track_id, criteria, *, min_count, starts=None, ends=None):
+    # +1 to start_tc index because we want the index of the first TC point not the index
+    # of the last non-TC point
+    # Where do cyclones start/end being TC and start/end being WCS but not TC
+    if starts is None:
+        starts = np.where(~criteria[:-1] & criteria[1:])[0] + 1
+    if ends is None:
+        ends = np.where(criteria[:-1] & ~criteria[1:])[0]
 
-    # Allow for short excursions. Look ahead to see if it comes back to the same
-    # category
-    slice_ahead = slice(idx, min(idx + min_count, len(nat)))
-    if condition[slice_ahead].any():
-        # Start again from the first point
-        print(condition[slice_ahead])
-        idx = idx + np.where(condition[slice_ahead])[0][0]
-        fill_next_nature(nat, condition, label, idx, min_count)
+    # Exceptions
+    # First point is a TC point and is missed
+    if starts[0] > ends[0]:
+        starts = np.concat([[0], starts])
 
-    return idx
+    # Last point is a TC point, so end point is missed
+    if len(starts) > len(ends):
+        ends = np.concat([ends, [len(criteria) - 1]])
 
+    # Look for points where the last point of a TC is within min_count of the next TC
+    # identification for the same track_id
+    close = (
+        np.where(
+            ((starts[1:] - ends[:-1]) < min_count)
+            & (track_id[starts[1:]] == track_id[ends[:-1]])
+        )[0]
+        + 1
+    )
 
-def smooth_excursions(nat, min_count):
-    # Smooth out any shorter than 1 day excursions
-    nat_consecutive = [(k, sum(1 for _ in g)) for k, g in groupby(nat)]
-    idx = nat_consecutive[0][1]
-    for m in range(1, len(nat_consecutive) - 1):
-        _nat, count = nat_consecutive[m]
-        if count < min_count and nat_consecutive[m - 1][0] == nat_consecutive[m + 1][0]:
-            new_nat = nat_consecutive[m - 1][0]
-            nat[idx : idx + count] = new_nat
-            nat_consecutive[m] = (new_nat, count)
+    # idx of all joined sequences
+    # Start of first sequence to end of second sequence
+    idx = np.concat(
+        [
+            np.arange(start, end + 1)
+            for start, end in zip(starts[close - 1], ends[close])
+        ]
+    )
 
-        idx += count
+    # Update start and end indices to remove joined sections
+    starts = starts[np.concat([[True], ~close])]
+    ends = ends[np.concat([~close, [True]])]
+
+    new_criteria = criteria.copy()
+    new_criteria[idx] = True
+
+    return new_criteria, starts, ends
