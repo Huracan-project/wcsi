@@ -2,11 +2,9 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import convolve1d
 import xarray as xr
 
-
-from .ragged import mask_short, padded_index
+from .ragged import mask_short, padded_index, uniform_filter1d
 
 
 def wcsi(
@@ -80,20 +78,21 @@ def wcsi(
     # Apply smoothing
     if filter_size is not None and filter_size > 1:
         idx, inverse = padded_index(
-            track_id, pad=filter_size // 2, pad_location="inner"
+            track_id, pad=filter_size // 2, pad_location="outer"
         )
 
-        # Use convolve 1d instead of uniform_filter1d
-        # Running mean in uniform_filter1d means NaNs or large masked values ruin the
-        # result for the rest of the array
-        # (see https://github.com/scipy/scipy/issues/7818)
-        kernel = np.ones(filter_size)
         if cps_b is not None:
-            cps_b = convolve1d(np.abs(cps_b)[idx], kernel)[inverse] / filter_size
+            cps_b = uniform_filter1d(
+                track_id, np.abs(cps_b), size=filter_size, idx=idx, inverse=inverse
+            )
         if cps_vtl is not None:
-            cps_vtl = convolve1d(cps_vtl[idx], kernel)[inverse] / filter_size
+            cps_vtl = uniform_filter1d(
+                track_id, cps_vtl, size=filter_size, idx=idx, inverse=inverse
+            )
         if cps_vtu is not None:
-            cps_vtu = convolve1d(cps_vtu[idx], kernel)[inverse] / filter_size
+            cps_vtu = uniform_filter1d(
+                track_id, cps_vtu, size=filter_size, idx=idx, inverse=inverse
+            )
 
     # Initialise to True everywhere and succesively apply other filters
     tc = np.ones(len(track_id), dtype=bool)
@@ -112,10 +111,12 @@ def wcsi(
 
     # Intensification rate
     if intensification_threshold is not None and relative_vorticity is not None:
-        vo850 = relative_vorticity.sel(pressure=850)
+        vo850 = relative_vorticity.sel(pressure=850).values
         if filter_size is not None and filter_size > 1:
             # Index for filtering has already been calculated
-            vo850 = convolve1d(vo850[idx], kernel)[inverse] / filter_size
+            vo850 = uniform_filter1d(
+                track_id, vo850, size=filter_size, idx=idx, inverse=inverse
+            )
         else:
             # Still need a padded index for gradient calculation, but it has not been
             # calculated if the filter size is unused

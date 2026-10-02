@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage import convolve1d
 
 
 def mask_short(track_id, istc, min_count=4):
@@ -57,3 +58,15 @@ def padded_index(track_id, pad=1, pad_location="inner", pad_method="constant"):
     idx = np.insert(np.arange(len(track_id)), idx_pad, idx_pad)
 
     return idx, inverse
+
+
+def uniform_filter1d(track_id, input, size, *, idx=None, inverse=None):
+    if idx is None or inverse is None:
+        idx, inverse = padded_index(track_id, size // 2, pad_location="outer")
+
+    # Use convolve 1d instead of uniform_filter1d
+    # Running mean in uniform_filter1d means NaNs or large masked values ruin the
+    # result for the rest of the array
+    # (see https://github.com/scipy/scipy/issues/7818)
+    # Enforce numpy array. It is much slower to pass an xarray Dataset
+    return convolve1d(np.asarray(input)[idx], np.ones(size))[inverse] / size
