@@ -158,20 +158,17 @@ def smooth_excursions(track_id, criteria, *, min_count, starts=None, ends=None):
 
     # Look for points where the last point of a TC is within min_count of the next TC
     # identification for the same track_id
-    close = (
-        np.where(
-            ((starts[1:] - ends[:-1]) < min_count)
-            & (track_id[starts[1:]] == track_id[ends[:-1]])
-        )[0]
-        + 1
+    close = ((starts[1:] - ends[:-1]) < min_count) & (
+        track_id[starts[1:]] == track_id[ends[:-1]]
     )
+    close_idx = np.where(close)[0] + 1
 
     # idx of all joined sequences
     # Start of first sequence to end of second sequence
     idx = np.concat(
         [
             np.arange(start, end + 1)
-            for start, end in zip(starts[close - 1], ends[close])
+            for start, end in zip(starts[close_idx - 1], ends[close_idx])
         ]
     )
 
