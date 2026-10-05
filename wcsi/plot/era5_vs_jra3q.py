@@ -1,4 +1,3 @@
-from prometheus_client.metrics_core import SummaryMetricFamily
 from matplotlib.colors import BoundaryNorm
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn3
@@ -23,7 +22,7 @@ cmap_kwargs = dict(
 def main(summary, matched_lmi):
     sets = []
 
-    is_era5 = summary["WCSI"] & ~summary["weak_match"]
+    is_era5 = summary["WCSI"] & ~summary["weak_match_era5"]
     is_jra3q = (summary.id_jra3q != -1) & ~summary["weak_match_jra3q"]
     is_ibtracs = summary.id_ibtracs != ""
     # (100, 010, 110, 001, 101, 011, 111)
@@ -36,19 +35,50 @@ def main(summary, matched_lmi):
     # 110 - ERA5 and JRA3Q
     sets.append(len(np.unique(summary[is_era5 & is_jra3q & ~is_ibtracs].id_era5)))
 
+    # Avoid double counting on IBTrACS IDs due to extra rows in table for SyCLoPS
+    ibtracs_ids = np.unique(summary.id_ibtracs[is_ibtracs])
+    nibtracs = len(ibtracs_ids)
+
+    # Succesively eliminate track IDs from IBTrACS IDs and count how many are eliminated
+    # In all datasets
+    hits = np.unique(summary[is_era5 & is_jra3q & is_ibtracs].id_ibtracs)
+    nhits_all = len(hits)
+    ibtracs_ids = ibtracs_ids[~np.isin(ibtracs_ids, hits)]
+
+    # In ERA5
+    hits = np.unique(summary[is_era5 & ~is_jra3q & is_ibtracs].id_ibtracs)
+    hits = hits[np.isin(hits, ibtracs_ids)]
+    nhits_era = len(hits)
+    ibtracs_ids = ibtracs_ids[~np.isin(ibtracs_ids, hits)]
+
+    # In JRA3Q
+    hits = np.unique(summary[~is_era5 & is_jra3q & is_ibtracs].id_ibtracs)
+    hits = hits[np.isin(hits, ibtracs_ids)]
+    nhits_jra = len(hits)
+    ibtracs_ids = ibtracs_ids[~np.isin(ibtracs_ids, hits)]
+
+    # Only IBTrACS
+    # Run code and add up numbers as a test this is working rather than just taking
+    # the difference from other totals
+    hits = np.unique(summary[~is_era5 & ~is_jra3q & is_ibtracs].id_ibtracs)
+    hits = hits[np.isin(hits, ibtracs_ids)]
+    nhits_ib = len(hits)
+    ibtracs_ids = ibtracs_ids[~np.isin(ibtracs_ids, hits)]
+
+    assert nibtracs == nhits_all + nhits_era + nhits_jra + nhits_ib
+    assert len(ibtracs_ids) == 0
+
     # 001 - Only IBTrACS
-    sets.append(len(np.unique(summary[~is_era5 & ~is_jra3q & is_ibtracs].id_ibtracs)))
+    sets.append(nhits_ib)
 
     # 101 - ERA5 and IBTrACS
-    sets.append(len(np.unique(summary[is_era5 & ~is_jra3q & is_ibtracs].id_ibtracs)))
+    sets.append(nhits_era)
 
     # 011 - JRA3Q and IBTrACS
-    sets.append(len(np.unique(summary[~is_era5 & is_jra3q & is_ibtracs].id_ibtracs)))
+    sets.append(nhits_jra)
 
     # 111 - In all datasets
-    sets.append(len(np.unique(summary[is_era5 & is_jra3q & is_ibtracs].id_ibtracs)))
-
-    print(sum(sets))
+    sets.append(nhits_all)
 
     fig, axes = plt.subplot_mosaic(
         """
@@ -114,7 +144,6 @@ def main(summary, matched_lmi):
             ]
         ):
             result = linregress(x_, y_)
-            print(result)
             ax.plot(
                 bins,
                 result.slope * bins + result.intercept,
