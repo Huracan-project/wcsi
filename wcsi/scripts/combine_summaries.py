@@ -54,7 +54,12 @@ def main():
     tracks_superbt = huracanpy.load("superbt.nc")
 
     # Load summary for ERA5
-    summary = pd.read_parquet("ERA5_summary.parquet")
+    summary = pd.read_parquet("WCSI_summary_ERA5.parquet").rename(
+        columns=dict(is_tc="WCSI", track_id="id_era5")
+    )
+
+    # Add H2017 and H2017-nolat
+    summary = combine_filters(summary, tracks_era5)
 
     # Match ERA5 to IBTrACS
     print("Match ERA5 to IBTrACS")
@@ -83,7 +88,26 @@ def main():
         tracks_superbt,
         dict(era5=tracks_era5, jra3q=tracks_jra3q, syclops=syclops),
     )
+
+    summary = summary.rename(columns=dict(weak_match="weak_match_era5"))
     summary.to_parquet("WCSI_summary_all.parquet")
+
+
+def combine_filters(summary, tracks):
+    # Could match up track ID original, but matching the origin of track is quick and
+    # easy enough
+    print("Matching genesis points")
+    tracks_tcident = load_genesis_points("ERA5_tcident.nc")
+    tracks_nolat_tcident = load_genesis_points("ERA5_nolat-tcident.nc")
+
+    for name, points in [
+        ("H2017-nolat", tracks_nolat_tcident),
+        ("H2017", tracks_tcident),
+    ]:
+        matches = huracanpy.assess.match([tracks, points], ["all", name], max_dist=0)
+        summary[name] = np.isin(summary.id_era5, matches.id_all)
+
+    return summary
 
 
 def load_genesis_points(filename):

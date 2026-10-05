@@ -9,22 +9,6 @@ def main():
 
     closed_mslp = ~tracks.mslp_minima.isnull().values
 
-    print("H2017")
-    tracks["h2017"] = (
-        "record",
-        wcsi(
-            tracks.track_id,
-            relative_vorticity=tracks.relative_vorticity,
-            npoints=4,
-            vort_threshold=6,
-            vort_warm_core_threshold=6,
-            intensification_threshold=None,
-            coherent=True,
-            filter_size=None,
-            filter_all=tracks.hrcn.get_is_ocean(),
-        ),
-    )
-
     print("WCS")
     wcs = wcsi(
         tracks.track_id,
@@ -71,11 +55,8 @@ def main():
         tracks.track_id, tracks.time, tracks.lon, tracks.lat, tracks.wcsi
     )
 
-    for label, varname in [("H2017-nolat", "h2017"), ("WCS", "wcs")]:
-        track_ids = np.unique(tracks.track_id[tracks[varname]])
-        table[label] = np.isin(table.track_id, track_ids)
-
-    table["H2017"] = table["H2017-nolat"] & (table.origin_lat <= 30)
+    track_ids = np.unique(tracks.track_id[tracks.wcs])
+    table["WCS"] = np.isin(table.track_id, track_ids)
 
     table.to_parquet("WCSI_summary_ERA5.parquet")
     huracanpy.save(tracks, "ERA5.nc")
