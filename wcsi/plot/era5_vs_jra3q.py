@@ -25,15 +25,29 @@ def main(summary, matched_lmi):
     is_era5 = summary["WCSI"] & ~summary["weak_match_era5"]
     is_jra3q = (summary.id_jra3q != -1) & ~summary["weak_match_jra3q"]
     is_ibtracs = summary.id_ibtracs != ""
+    invest_counts = []
     # (100, 010, 110, 001, 101, 011, 111)
     # 100 - Only ERA5
-    sets.append(len(np.unique(summary[is_era5 & ~is_jra3q & ~is_ibtracs].id_era5)))
+    summary_ = summary[is_era5 & ~is_jra3q & ~is_ibtracs]
+    sets.append(len(np.unique(summary_.id_era5)))
+    invest_counts.append(
+        summary_[summary_.id_superbt_era5 != ""].id_superbt_era5.nunique()
+    )
 
     # 010 - Only JRA3Q
-    sets.append(len(np.unique(summary[~is_era5 & is_jra3q & ~is_ibtracs].id_jra3q)))
+    summary_ = summary[~is_era5 & is_jra3q & ~is_ibtracs]
+    sets.append(len(np.unique(summary_.id_jra3q)))
+    invest_counts.append(
+        summary_[summary_.id_superbt_jra3q != ""].id_superbt_jra3q.nunique()
+    )
 
     # 110 - ERA5 and JRA3Q
-    sets.append(len(np.unique(summary[is_era5 & is_jra3q & ~is_ibtracs].id_era5)))
+    summary_ = summary[is_era5 & is_jra3q & ~is_ibtracs]
+    sets.append(len(np.unique(summary_.id_era5)))
+    invest_counts.append(
+        summary_[summary_.id_superbt_era5 != ""].id_superbt_era5.nunique()
+    )
+    print(invest_counts)
 
     # Avoid double counting on IBTrACS IDs due to extra rows in table for SyCLoPS
     ibtracs_ids = np.unique(summary.id_ibtracs[is_ibtracs])
@@ -125,6 +139,10 @@ def main(summary, matched_lmi):
     for subset in ["101", "011"]:
         v.get_patch_by_id(subset).set(alpha=0.5)
 
+    for n, subset in enumerate(["100", "010", "110"]):
+        label = v.get_label_by_id(subset)
+        label.set_text(f"{label.get_text()}\n({invest_counts[n]})")
+
     matched_lmi = matched_lmi[
         (matched_lmi.id_jra3q != -1) & (matched_lmi.id_era5 != -1)
     ]
@@ -162,7 +180,7 @@ def main(summary, matched_lmi):
     axes["b"].legend()
     axes["c"].legend()
 
-    axes["a"].set_title("Matching\n1979-2024")
+    axes["a"].set_title("Matching\n2007-2024")
 
     for ax in ["a", "b", "c"]:
         axes[ax].text(0.01, 0.925, f"({ax})", transform=axes[ax].transAxes)
@@ -185,6 +203,6 @@ if __name__ == "__main__":
     from wcsi.summary import filters
 
     summary = pd.read_parquet("WCSI_summary_all.parquet")
-    summary = filters.year(summary, 1979)
+    summary = filters.year(summary, 2007)
     matched_lmi = pd.read_parquet("matched_lmi.parquet")
     main(summary, matched_lmi)
