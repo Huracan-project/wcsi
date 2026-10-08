@@ -55,7 +55,7 @@ natures = dict(
         TC=("Tropical", colors[6]),
         Tr=("Trough", colors[3]),
         Ot=("Other", colors[7]),
-        BC=("Baroclinic", colors[2]),
+        BC=("Asymmetric", colors[2]),
         MV=("Mid-level", colors[4]),
         Vo=("Vortex", colors[0]),
     ),
@@ -494,7 +494,7 @@ def main(
     _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
 
     # Plot all tracks
-    plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
+    # plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
 
 
 def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
