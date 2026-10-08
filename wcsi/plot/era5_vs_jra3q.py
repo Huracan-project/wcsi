@@ -1,12 +1,24 @@
+from string import ascii_lowercase
+
 from matplotlib.colors import BoundaryNorm
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn3
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
+from tqdm import tqdm
+
+from wcsi.scripts.statistics import get_stats
 
 from .max_intensity_by_category import bins
-from .matching_by_filter_with_invests import colours, default_labels
+from .roebber import colors
+
+colors = colors[[1, 4]]
+half_window = 5
+
+# Klotzbach pressure categories
+category_bins = np.asarray([-np.inf, 925, 945, 960, 975, 990, 1005, np.inf])
 
 
 linestyles = [":", "-"]
@@ -20,6 +32,88 @@ cmap_kwargs = dict(
 
 
 def main(summary, matched_lmi):
+    matched_lmi = matched_lmi[
+        (matched_lmi.id_jra3q != -1) & (matched_lmi.id_era5 != -1)
+    ]
+    stats = rolling_window_stats(
+        summary,
+        matched_lmi,
+        half_window=5,
+        datasets=["era5", "jra3q"],
+        bins=category_bins,
+    )
+
+    summary = filters.year(summary, 2007)
+    sets, invest_counts = get_venn_counts(summary)
+
+    fig, axes = plt.subplots(
+        9, 2, height_ratios=[1] + [0.1] + [0.2] * 7, figsize=(8, 8)
+    )
+    plt.subplots_adjust(hspace=0.25)
+
+    gs = axes[0, 0].get_gridspec()
+    axes[1, 1].set_axis_off()
+    for ax in axes[:, 0]:
+        ax.set_axis_off()
+
+    ax_venn = fig.add_subplot(gs[:6, 0])
+    ax_legend = fig.add_subplot(gs[6:, 0])
+    ax_legend.set_axis_off()
+    plot_venn(sets, invest_counts, ax_venn)
+    ax_venn.set_title("Matching\n2007-2024")
+
+    plot_rolling_window(stats, axes[:, 1], bins=category_bins)
+
+    for n, ax in enumerate([ax_venn, axes[0, 1], axes[2, 1]]):
+        ax.text(0.0, 1.1, f"({ascii_lowercase[n]})", transform=ax.transAxes)
+
+    for n, (dataset, color) in enumerate(
+        [
+            ("IBTrACS", "k"),
+            ("ERA5", colors[0]),
+            ("JRA3Q", colors[1]),
+        ]
+    ):
+        ax_legend.fill_betweenx(
+            [np.nan, np.nan],
+            np.nan,
+            np.nan,
+            color=color,
+            label=dataset,
+        )
+    ax_legend.legend(loc="upper center")
+
+    fig.text(
+        0.475,
+        0.4,
+        "Average error at maximum intensity (hPa)",
+        rotation="vertical",
+        va="center",
+    )
+    fig.text(0.925, 0.4, "Pressure category", rotation=270, va="center")
+    fig.autofmt_xdate()
+    fig.suptitle("ERA5 vs JRA3Q")
+
+    plt.savefig("era5_vs_jra3q.pdf")
+
+
+def plot_venn(sets, invest_counts, ax):
+    v = venn3(
+        sets,
+        set_labels=["ERA5", "JRA3Q", "IBTrACS"],
+        set_colors=[colors[0], colors[1], "k"],
+        alpha=0.75,
+        ax=ax,
+    )
+
+    for n, subset in enumerate(["100", "010", "110"]):
+        label = v.get_label_by_id(subset)
+        label.set_text(f"{label.get_text()}\n({invest_counts[n]})")
+
+    return v
+
+
+def get_venn_counts(summary):
     sets = []
 
     is_era5 = summary["WCSI"] & ~summary["weak_match_era5"]
@@ -47,7 +141,6 @@ def main(summary, matched_lmi):
     invest_counts.append(
         summary_[summary_.id_superbt_era5 != ""].id_superbt_era5.nunique()
     )
-    print(invest_counts)
 
     # Avoid double counting on IBTrACS IDs due to extra rows in table for SyCLoPS
     ibtracs_ids = np.unique(summary.id_ibtracs[is_ibtracs])
@@ -94,61 +187,127 @@ def main(summary, matched_lmi):
     # 111 - In all datasets
     sets.append(nhits_all)
 
-    fig, axes = plt.subplot_mosaic(
-        """
-        xxxzbbb
-        xxxzbbb
-        aaazbbb
-        aaazbbb
-        aaazbbb
-        aaazccc
-        aaazccc
-        aaazccc
-        aaazccc
-        yyyzccc
-        yyyzwww
-        yyyz111
-        
-        """,
-        figsize=(8, 6),
-    )
+    return sets, invest_counts
 
-    for ax in ["w", "x", "y", "z"]:
-        axes[ax].set_axis_off()
 
-    v = venn3(
-        sets,
-        set_labels=["ERA5", "JRA3Q", "IBTrACS"],
-        set_colors=["C0", "C1", "C2"],
-        alpha=0.99,
-        ax=axes["a"],
-    )
+def plot_rolling_window(stats_datasets, axes, bins):
+    for n, datasets in enumerate(stats_datasets):
+        stats = stats_datasets[datasets]
+        for stat, linestyle in [("csi", "-"), ("pod", "--"), ("far", ":")]:
+            axes[0].fill_between(
+                stats.year,
+                stats[f"{stat}_low"],
+                stats[f"{stat}_high"],
+                color=colors[n],
+                alpha=0.5,
+            )
+            axes[0].plot(stats.year, stats[stat], color=colors[n], linestyle=linestyle)
 
-    for subset in ["101", "011", "111"]:
-        v.get_patch_by_id(subset).set(color=colours["hits"])
+    for m in range(len(bins) - 1):
+        ax = axes[m + 2]
+        ymin = np.inf
+        ymax = -np.inf
+        for n, dataset in enumerate(stats_datasets):
+            stats = stats_datasets[dataset]
+            low_bound = stats[f"error_{m}"] - stats[f"confidence_{m}"]
+            high_bound = stats[f"error_{m}"] + stats[f"confidence_{m}"]
+            ax.fill_between(
+                stats.year,
+                low_bound,
+                high_bound,
+                color=colors[n],
+                alpha=0.5,
+            )
+            ax.plot(stats.year, stats[f"error_{m}"], color=colors[n])
+            ymin = min(ymin, np.floor(low_bound.min() / 5) * 5)
+            ymax = max(ymax, np.ceil(high_bound.max() / 5) * 5)
+        ax.set(ylim=[ymin, ymax], yticks=[ymin, ymax], xticks=[])
+        ax.set_ylabel(f" {5 - m}", rotation="horizontal")
+        ax.yaxis.set_label_position("right")
+        ax.spines[["top", "bottom"]].set_visible(False)
+        for y in range(int(ymin), int(ymax) + 1, 5):
+            ax.axhline(y, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
 
-    for subset in ["100", "110", "010"]:
-        v.get_patch_by_id(subset).set(color=colours["false_alarms"])
-
-    for subset in ["001"]:
-        v.get_patch_by_id(subset).set(color=colours["misses"])
-
-    for subset in ["010", "100"]:
-        v.get_patch_by_id(subset).set(alpha=0.5)
-
-    for subset in ["101", "011"]:
-        v.get_patch_by_id(subset).set(alpha=0.5)
-
-    for n, subset in enumerate(["100", "010", "110"]):
-        label = v.get_label_by_id(subset)
-        label.set_text(f"{label.get_text()}\n({invest_counts[n]})")
-
-    matched_lmi = matched_lmi[
-        (matched_lmi.id_jra3q != -1) & (matched_lmi.id_era5 != -1)
+    handles = [
+        Line2D([0, 0], [0, 0], color="k", linestyle=l, label=label)
+        for l, label in [("-", "CSI"), ("--", "POD"), (":", "FAR")]
     ]
+    axes[0].legend(handles=handles, loc="upper center", ncol=3)
 
+    axes[0].set(
+        xticklabels=[],
+        ylim=(0, 1),
+        ylabel="Score",
+        title="Skill",
+    )
+    xmin = 1948 + half_window
+    xmax = 2024 - half_window
+    xticks = (
+        [xmin]
+        + list(
+            range(int(np.ceil(xmin / 10) * 10), int(np.floor(xmax / 10) * 10) + 1, 10)
+        )
+        + [xmax]
+    )
+    axes[-1].set(
+        xlabel="Year (11-year rolling window)",
+        xticks=xticks,
+        ylabel="",
+    )
+    axes[2].spines[["top"]].set_visible(True)
+    axes[2].set_title("MSLP Error")
+    axes[-1].spines[["bottom"]].set_visible(True)
+
+    for ax in axes:
+        ax.set_xlim(xmin, xmax)
+    for x in xticks:
+        axes[0].axvline(x, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
+        for ax in axes[2:]:
+            ax.axvline(x, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
+
+    for y in np.arange(0, 1 + 0.2, 0.2):
+        axes[0].axhline(y, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
+
+
+def rolling_window_stats(summary, matched_lmi, half_window, datasets, bins):
+    stats = {dataset: [] for dataset in datasets}
+    for start_year in tqdm(range(1948, 2024 + 1 - 2 * half_window)):
+        summary_ = filters.year(
+            summary, start_year=start_year, end_year=start_year + 2 * half_window
+        )
+        matched_lmi_ = matched_lmi[
+            (matched_lmi.year >= start_year)
+            & (matched_lmi.year <= start_year + 2 * half_window)
+        ]
+
+        total = summary_.id_ibtracs.nunique() - 1
+        for dataset in datasets:
+            if dataset == "era5":
+                stats_window = get_stats(summary_[summary_.WCSI], total, label=dataset)
+            else:
+                stats_window = get_stats(summary_, total, label=dataset)
+            stats_window["year"] = start_year + half_window
+
+            for m in range(len(bins) - 1):
+                matched_lmi_category = matched_lmi_[
+                    (matched_lmi_.mslp_ibtracs > bins[m])
+                    & (matched_lmi_.mslp_ibtracs <= bins[m + 1])
+                ]
+                errors = (
+                    matched_lmi_category[f"mslp_{dataset}"]
+                    - matched_lmi_category.mslp_ibtracs
+                )
+                stats_window[f"error_{m}"] = np.mean(errors)
+                stats_window[f"confidence_{m}"] = np.std(errors) / np.sqrt(len(errors))
+
+            stats[dataset].append(stats_window)
+
+    return {dataset: pd.DataFrame(stats[dataset]) for dataset in datasets}
+
+
+def plot_matched_lmi(matched_lmi, datasets, axes):
     x = matched_lmi.mslp_ibtracs
-    for dataset, ax in [("era5", axes["b"]), ("jra3q", axes["c"])]:
+    for dataset, ax in zip(datasets, axes):
         y = matched_lmi[f"mslp_{dataset}"]
 
         counts, _, _ = np.histogram2d(x, y, bins=bins)
@@ -173,36 +332,12 @@ def main(summary, matched_lmi):
         ax.plot(bins, bins, "-k")
         ax.set(xlim=(bins[0], bins[-1]), ylim=(bins[0], bins[-1]))
 
-    plt.colorbar(im, cax=axes["1"], orientation="horizontal")
-    axes["b"].set_xticklabels([])
-    axes["b"].set(xlabel="", ylabel="MSLP ERA5 (hPa)")
-    axes["c"].set(xlabel="MSLP IBTrACS (hPa)", ylabel="MSLP JRA3Q (hPa)")
-    axes["b"].legend()
-    axes["c"].legend()
-
-    axes["a"].set_title("Matching\n2007-2024")
-
-    for ax in ["a", "b", "c"]:
-        axes[ax].text(0.01, 0.925, f"({ax})", transform=axes[ax].transAxes)
-
-    for category in ["hits", "false_alarms", "misses"]:
-        axes["y"].fill_betweenx(
-            [np.nan, np.nan],
-            np.nan,
-            np.nan,
-            color=colours[category],
-            label=default_labels[category],
-        )
-    axes["y"].legend(ncol=2, bbox_to_anchor=[1, 1])
-
-    fig.suptitle("ERA5 vs JRA3Q")
-    plt.savefig("era5_vs_jra3q.pdf")
+    return im
 
 
 if __name__ == "__main__":
     from wcsi.summary import filters
 
     summary = pd.read_parquet("WCSI_summary_all.parquet")
-    summary = filters.year(summary, 2007)
     matched_lmi = pd.read_parquet("matched_lmi.parquet")
     main(summary, matched_lmi)
