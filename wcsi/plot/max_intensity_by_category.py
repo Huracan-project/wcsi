@@ -4,9 +4,9 @@ from matplotlib.colors import BoundaryNorm
 import numpy as np
 import pandas as pd
 
-from .. import filters, nature
+from wcsi.summary import filters
 
-bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 199])
+bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 201])
 norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 bins = np.arange(870, 1020 + 1, 5)
 bins_lon = np.arange(0, 75 + 1, 5)
@@ -56,16 +56,16 @@ def main():
 
         print(counts.max())
 
-    tracks = huracanpy.load("ERA5_all.nc")
-    for ax, subset, function in [
-        ("c", "H2017", is_tc_h2017),
-        ("d", "WCS", is_tc_wcs),
-        ("e", "WCSI", is_tc_wcsi),
+    tracks = huracanpy.load("ERA5.nc")
+    for ax, subset in [
+        ("c", "H2017"),
+        ("d", "WCS"),
+        ("e", "WCSI"),
     ]:
         fa = tracks.hrcn.sel_id(
             summary.loc[summary[subset] & (summary.id_ibtracs == ""), "id_era5"]
         )
-        fa = function(fa).hrcn.get_apex_vals("mslp", stat="min")
+        fa = fa.isel(record=fa[subset.lower()]).hrcn.get_apex_vals("mslp", stat="min")
         counts, _, _, im = axes[ax].hist2d(
             fa.mslp, np.abs(fa.lat), bins=[bins, bins_lon], **hist2d_kwargs
         )
@@ -90,39 +90,6 @@ def main():
         axes[ax].text(0.0, 1.1, f"({ax})", transform=axes[ax].transAxes)
 
     plt.savefig("max_intensity_by_category.pdf")
-
-
-def is_tc_h2017(tracks):
-    tracks, summary = nature.wcsi(
-        tracks,
-        npoints=4,
-        vort_threshold=6,
-        vort_warm_core_threshold=6,
-        coherent=True,
-        ocean=True,
-        intensification_threshold=None,
-    )
-
-    return tracks.isel(record=np.where(tracks.is_tc)[0])
-
-
-def is_tc_wcs(tracks):
-    tracks, summary = nature.wcsi(
-        tracks,
-        npoints=4,
-        b_threshold=15,
-        vtl_threshold=0,
-        vtu_threshold=0,
-        vort_threshold=6,
-        filter_size=5,
-        intensification_threshold=None,
-    )
-
-    return tracks.isel(record=np.where(tracks.is_tc)[0])
-
-
-def is_tc_wcsi(tracks):
-    return tracks.isel(record=np.where(tracks.is_tc)[0])
 
 
 if __name__ == "__main__":

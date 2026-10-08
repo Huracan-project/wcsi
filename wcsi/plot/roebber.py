@@ -1,3 +1,4 @@
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
@@ -11,6 +12,8 @@ subsets = [
     ("jra3q", "WCSI (JRA3Q)"),
 ]
 
+colors = mpl.colormaps["okabe_ito"](np.linspace(0, 1, 8))[2:]
+
 
 def main():
     fig1, axes = plt.subplots(1, 2, figsize=(8, 3), sharey="all", sharex="all")
@@ -23,7 +26,7 @@ def main():
 
     l1 = axes[0].legend(
         handles=[
-            Line2D([0], [0], color=f"C{n}", linestyle="", marker="o", label=label)
+            Line2D([0], [0], color=colors[n], linestyle="", marker="o", label=label)
             for n, (subset, label) in enumerate(subsets)
         ],
         ncol=2,
@@ -44,9 +47,6 @@ def main():
     )
     axes[0].add_artist(l1)
 
-    subsets.remove(("era5_H2017", "H2017"))
-    subsets.remove(("era5_WCS", "WCS"))
-
     for basin in ["NA", "WP", "EP", "NI", "SI", "SP"]:
         print(basin)
         fig, ax = plt.subplots(1, 1)
@@ -58,7 +58,7 @@ def main():
 
         l1 = ax.legend(
             handles=[
-                Line2D([0], [0], color=f"C{n}", linestyle="", marker="o", label=label)
+                Line2D([0], [0], color=colors[n], linestyle="", marker="o", label=label)
                 for n, (subset, label) in enumerate(subsets)
             ],
             ncol=2,
@@ -84,23 +84,26 @@ def main():
             loc=[0.015, 0.2],
         )
         ax.add_artist(l1)
+        ax.set(xlim=[0.2, 1], ylim=[0.2, 1])
 
         fig.savefig(f"roebber_combined_{basin}.png")
         plt.close(fig)
 
+    subsets.remove(("era5_H2017", "H2017"))
+    subsets.remove(("era5_WCS", "WCS"))
     subsets.remove(("syclops", "SyCLoPS"))
     subsets.remove(("jra3q", "WCSI (JRA3Q)"))
     for n, basin in enumerate(["NA", "WP", "EP", "NI", "SI", "SP"]):
         print(basin)
 
         stats = pd.read_csv(f"WCSI_scores_{basin}_1979-2024.csv")
-        _main(stats, axes[1], marker="v", color=f"C{n}")
+        _main(stats, axes[1], marker="v", color=colors[n])
         stats = pd.read_csv(f"WCSI_scores_{basin}_invests_2007-2024.csv")
-        _main(stats, axes[1], marker="s", color=f"C{n}")
+        _main(stats, axes[1], marker="s", color=colors[n])
 
         axes[1].legend(
             handles=[
-                Line2D([0], [0], color=f"C{n}", linestyle="", marker="o", label=basin)
+                Line2D([0], [0], color=colors[n], linestyle="", marker="o", label=basin)
                 for n, basin in enumerate(["NA", "WP", "EP", "NI", "SI", "SP"])
             ],
             ncol=2,
@@ -120,7 +123,7 @@ def _main(stats, ax, marker="v", color=None):
 
     for n, (subset, name) in enumerate(subsets):
         if color is None:
-            c = f"C{n}"
+            c = colors[n]
         else:
             c = color
         row = stats.loc[stats.subset == subset].iloc[0]
@@ -152,9 +155,9 @@ def _main(stats, ax, marker="v", color=None):
             ax.plot(
                 [1 - row.far, 1 - row.far_invest],
                 [row.pod, row.pod],
-                f"-{c}",
+                color=c,
                 linewidth=5,
-                alpha=0.25,
+                alpha=0.4,
             )
 
     ax.set(xlabel="1 - FAR", ylabel="POD", xlim=[0.5, 1], ylim=[0.5, 1])

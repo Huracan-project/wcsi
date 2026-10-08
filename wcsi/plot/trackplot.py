@@ -9,6 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sb
 from scipy.ndimage import uniform_filter1d
 from tqdm import tqdm
 import xarray as xr
@@ -47,33 +48,33 @@ extents = dict(
 # )
 
 # Colour for each cyclone category
-colorsb = mpl.colormaps["tab20b"](np.linspace(0, 1, 20))
-colorsc = mpl.colormaps["tab20c"](np.linspace(0, 1, 20))
+colors = mpl.colormaps["okabe_ito"](np.linspace(0, 1, 8))
+colors_m = sb.color_palette("muted")
 natures = dict(
     wcsi=dict(
-        TC=("Tropical", colorsc[4]),
-        Tr=("Trough", colorsc[8]),
-        Ot=("Other", colorsb[12]),
-        BC=("Baroclinic", colorsc[0]),
-        MV=("Mid-level", colorsc[12]),
-        Vo=("Vortex", colorsc[16]),
+        TC=("Tropical", colors[6]),
+        Tr=("Trough", colors[3]),
+        Ot=("Other", colors[7]),
+        BC=("Baroclinic", colors[2]),
+        MV=("Mid-level", colors[4]),
+        Vo=("Vortex", colors[0]),
     ),
     ibtracs=dict(
-        TS=("Tropical", colorsc[5]),
-        SS=("Subtropical", colorsb[19]),
-        NR=("Not Recorded", colorsb[11]),
-        ET=("Extratropical", colorsc[1]),
-        MX=("Mixture", colorsb[3]),
-        DB=("Disturbance", colorsc[17]),
+        TS=("Tropical", colors_m[1]),
+        SS=("Subtropical", colors_m[5]),
+        NR=("Not Recorded", colors_m[6]),
+        ET=("Extratropical", colors_m[0]),
+        MX=("Mixture", colors_m[8]),
+        DS=("Disturbance", colors_m[7]),
     ),
     superbt=dict(
-        TS=("Tropical", colorsc[5]),
-        SS=("Subtropical", colorsb[19]),
-        LO=("Low", colorsb[3]),
-        NT=("Unknown", colorsc[10]),
-        EX=("Extratropical", colorsc[2]),
-        WV=("Wave", colorsb[7]),
-        DB=("Disturbance", colorsc[18]),
+        TS=("Tropical", colors_m[1]),
+        SS=("Subtropical", colors_m[5]),
+        LO=("Low", colors_m[0]),
+        NT=("Unknown", colors_m[6]),
+        EX=("Extratropical", colors_m[0]),
+        WV=("Wave", colors_m[9]),
+        DB=("Disturbance", colors_m[7]),
     ),
 )
 
@@ -425,6 +426,12 @@ def combined_legend(ax, lines):
     ax.legend(lines, labels)
 
 
+def save_and_close(fig, filename):
+    fig.savefig(filename)
+    fig.clear()
+    plt.close(fig)
+
+
 def showlimit(ax, x, y, ylim, above=True, color="k"):
     ax.axhline(ylim, color=color)
 
@@ -478,6 +485,10 @@ def main(
     table = pd.read_parquet(str(data_path / summary_fname))
     if reanalysis_label != "era5":
         table["WCSI"] = table[f"id_{reanalysis_label}"] != -1
+
+    tracks = tracks.hrcn.sel_id(
+        table.loc[table.WCSI | (table.id_ibtracs != ""), f"id_{reanalysis_label}"]
+    )
 
     # Specific tracks for WCSI paper
     _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
@@ -560,55 +571,63 @@ def plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
     for prefix, subset in [("hit", hits), ("weak_hit", weak_hits)]:
         for n, row in tqdm(subset.iterrows(), total=len(subset)):
             track_id = row[f"id_{reanalysis_label}"]
-            track = tracks.hrcn.sel_id(track_id)
+            fname = plot_path / "hit" / f"{prefix}_{row.id_ibtracs}_{track_id}.png"
+            if not fname.exists():
+                track = tracks.hrcn.sel_id(track_id)
+                ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
+                fig, axes = track_overview(
+                    track=track, obs=ib, dataset_label=reanalysis_label.upper()
+                )
+                save_and_close(fig, fname)
+
+    (plot_path / "miss").mkdir(exist_ok=True)
+    for n, row in tqdm(misses.iterrows(), total=len(misses)):
+        track_id = row[f"id_{reanalysis_label}"]
+        track_id_for_name = "" if track_id == -1 else track_id
+
+        fname = plot_path / "miss" / f"miss_{row.id_ibtracs}_{track_id_for_name}.png"
+        if not fname.exists():
+            track = None if track_id == -1 else tracks.hrcn.sel_id(track_id)
             ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
             fig, axes = track_overview(
                 track=track, obs=ib, dataset_label=reanalysis_label.upper()
             )
-            fig.savefig(plot_path / "hit" / f"{prefix}_{row.id_ibtracs}_{track_id}.png")
-            plt.close(fig)
-
-    (plot_path / "miss").mkdir(exist_ok=True)
-    for n, row in tqdm(misses.iterrows(), total=len(misses)):
-        ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
-        if row[f"id_{reanalysis_label}"] == -1:
-            track = None
-            track_id = ""
-        else:
-            track_id = row[f"id_{reanalysis_label}"]
-            track = tracks.hrcn.sel_id(row[track_id])
-        fig, axes = track_overview(
-            track=track, obs=ib, dataset_label=reanalysis_label.upper()
-        )
-        fig.savefig(plot_path / "miss" / f"miss_{row.id_ibtracs}_{track_id}.png")
-        plt.close(fig)
+            save_and_close(fig, fname)
 
     (plot_path / "invest").mkdir(exist_ok=True)
     for n, row in tqdm(invests.iterrows(), total=len(invests)):
         track_id = row[f"id_{reanalysis_label}"]
-        track = tracks.hrcn.sel_id(row[f"id_{reanalysis_label}"])
-        ib = superbt.hrcn.sel_id(row[f"id_superbt_{reanalysis_label}"])
-        fig, axes = track_overview(
-            track=track,
-            obs=ib,
-            obs_label="SuperBT",
-            dataset_label=reanalysis_label.upper(),
-        )
-        fig.savefig(
+        fname = (
             plot_path
             / "invest"
             / f"invest_{row[f'id_superbt_{reanalysis_label}']}_{track_id}.png"
         )
-        plt.close(fig)
+        if not fname.exists():
+            track = tracks.hrcn.sel_id(row[f"id_{reanalysis_label}"])
+            ib = superbt.hrcn.sel_id(row[f"id_superbt_{reanalysis_label}"])
+            fig, axes = track_overview(
+                track=track,
+                obs=ib,
+                obs_label="SuperBT",
+                dataset_label=reanalysis_label.upper(),
+            )
+            save_and_close(fig, fname)
 
     (plot_path / "false_alarm").mkdir(exist_ok=True)
     for n, row in tqdm(false_alarms.iterrows(), total=len(false_alarms)):
         track_id = row[f"id_{reanalysis_label}"]
-        track = tracks.hrcn.sel_id(track_id)
-        fig, axes = track_overview(track=track, dataset_label=reanalysis_label.upper())
-        fig.savefig(plot_path / "false_alarm" / f"false_alarm_{track_id}.png")
-        plt.close(fig)
+        fname = plot_path / "false_alarm" / f"false_alarm_{track_id}.png"
+        if not fname.exists():
+            track = tracks.hrcn.sel_id(track_id)
+            fig, axes = track_overview(
+                track=track, dataset_label=reanalysis_label.upper()
+            )
+            save_and_close(fig, fname)
 
 
 if __name__ == "__main__":
+    # CODEX
+    # This module is a batch image exporter.  A GUI backend can retain native canvas
+    # resources while thousands of figures are produced, even after ``plt.close``.
+    mpl.use("Agg")
     app()
