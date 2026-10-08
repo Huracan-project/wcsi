@@ -37,15 +37,15 @@ def categories(table, subset, invests=False, label="era5"):
         (table.id_ibtracs != "") & table[subset] & ~table[f"weak_match_{label}"]
     ]
 
-    weak_hits = table[
+    weak_matches = table[
         (table.id_ibtracs != "") & table[subset] & table[f"weak_match_{label}"]
     ]
+    weak_matches = weak_matches[~np.isin(weak_matches.id_ibtracs, hits.id_ibtracs)]
 
     misses = table[
         (table.id_ibtracs != "")
-        & ~table[subset]
         & ~np.isin(table.id_ibtracs, hits.id_ibtracs)
-        & ~table[f"weak_match_{label}"]
+        & ~np.isin(table.id_ibtracs, weak_matches.id_ibtracs)
     ]
 
     false_alarms = table[(table.id_ibtracs == "") & table[subset]]
@@ -54,6 +54,6 @@ def categories(table, subset, invests=False, label="era5"):
         invests = false_alarms[false_alarms[f"id_superbt_{label}"] != ""]
         false_alarms = false_alarms[false_alarms[f"id_superbt_{label}"] == ""]
 
-        return hits, weak_hits, misses, false_alarms, invests
+        return hits, weak_matches, misses, false_alarms, invests
     else:
-        return hits, weak_hits, misses, false_alarms
+        return hits, weak_matches, misses, false_alarms
