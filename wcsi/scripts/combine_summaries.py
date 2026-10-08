@@ -54,7 +54,7 @@ def main():
     tracks_superbt = huracanpy.load("superbt.nc")
 
     # Load summary for ERA5
-    summary = pd.read_parquet("WCSI_summary_ERA5.parquet").rename(
+    summary = pd.read_parquet("ERA5.parquet").rename(
         columns=dict(is_tc="WCSI", track_id="id_era5")
     )
 

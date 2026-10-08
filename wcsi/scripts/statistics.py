@@ -18,7 +18,6 @@ from wcsi.summary import filters
 
 def main():
     summary = pd.read_parquet("WCSI_summary_all.parquet")
-    summary = summary.rename(columns=dict(weak_match="weak_match_era5"))
 
     stats = _main(summary, start_year=1979, invests=False)
     stats.to_csv("WCSI_scores_1979-2024.csv")
@@ -32,14 +31,12 @@ def main():
         ],
         dim="record",
     )
-    era5 = huracanpy.load("ERA5_all_nature.nc").hrcn.sel_id(
-        np.unique(summary.loc[summary.WCSI, "id_era5"])
-    )
+    era5 = huracanpy.load("ERA5.nc")
     era5_basin = era5.hrcn.get_basin(convention="ibtracs").values
     era5_track_id = era5.track_id.values
     del era5
 
-    jra3q = huracanpy.load("JRA3Q_nolat-nwc-tcident_WCSI_nature.nc")
+    jra3q = huracanpy.load("JRA3Q.nc")
     jra3q_basin = jra3q.hrcn.get_basin(convention="ibtracs").values
     jra3q_track_id = jra3q.track_id.values
     del jra3q
@@ -65,9 +62,9 @@ def main():
             | (np.isin(summary.id_jra3q, jra3q_ids) & notibtracs)
             | (np.isin(summary.id_syclops, syclops_ids) & notibtracs)
         ]
-        stats = _main(summary_, start_year=1979, invests=False, subsets=["WCSI"])
+        stats = _main(summary_, start_year=1979, invests=False)
         stats.to_csv(f"WCSI_scores_{basin}_1979-2024.csv")
-        stats = _main(summary_, start_year=2007, invests=True, subsets=["WCSI"])
+        stats = _main(summary_, start_year=2007, invests=True)
         stats.to_csv(f"WCSI_scores_{basin}_invests_2007-2024.csv")
 
 
