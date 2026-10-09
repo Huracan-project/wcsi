@@ -4,9 +4,10 @@ from matplotlib.colors import BoundaryNorm
 import numpy as np
 import pandas as pd
 
+from wcsi import wcsi
 from wcsi.summary import filters
 
-bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 201])
+bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 299])
 norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 bins = np.arange(870, 1020 + 1, 5)
 bins_lon = np.arange(0, 75 + 1, 5)
@@ -65,6 +66,25 @@ def main():
         fa = tracks.hrcn.sel_id(
             summary.loc[summary[subset] & (summary.id_ibtracs == ""), "id_era5"]
         )
+        if subset == "H2017":
+            fa["h2017"] = (
+                "record",
+                wcsi(
+                    fa.track_id,
+                    relative_vorticity=fa.relative_vorticity,
+                    filter_all=fa.hrcn.get_is_ocean(),
+                    filter_any=None,
+                    npoints=4,
+                    b_threshold=None,
+                    vtl_threshold=None,
+                    vtu_threshold=None,
+                    vort_threshold=6,
+                    vort_warm_core_threshold=6,
+                    intensification_threshold=None,
+                    coherent=True,
+                    filter_size=None,
+                ),
+            )
         fa = fa.isel(record=fa[subset.lower()]).hrcn.get_apex_vals("mslp", stat="min")
         counts, _, _, im = axes[ax].hist2d(
             fa.mslp, np.abs(fa.lat), bins=[bins, bins_lon], **hist2d_kwargs

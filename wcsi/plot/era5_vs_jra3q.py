@@ -116,8 +116,8 @@ def plot_venn(sets, invest_counts, ax):
 def get_venn_counts(summary):
     sets = []
 
-    is_era5 = summary["WCSI"] & ~summary["weak_match_era5"]
-    is_jra3q = (summary.id_jra3q != -1) & ~summary["weak_match_jra3q"]
+    is_era5 = summary["WCSI"]
+    is_jra3q = summary.id_jra3q != -1
     is_ibtracs = summary.id_ibtracs != ""
     invest_counts = []
     # (100, 010, 110, 001, 101, 011, 111)

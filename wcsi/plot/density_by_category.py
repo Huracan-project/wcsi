@@ -22,7 +22,7 @@ def main():
     table = pd.read_parquet("WCSI_summary_all.parquet")
     table = filters.year(table, 2007)
 
-    hits, weak_hits, misses, false_alarms, invests = filters.categories(
+    hits, misses, false_alarms, invests = filters.categories(
         table, "WCSI", invests=True
     )
 
@@ -33,13 +33,7 @@ def main():
         tracks = huracanpy.load("ERA5.nc")
         densities = get_densities(track_ids, tracks)
 
-        ibtracs = xr.concat(
-            [
-                huracanpy.load("IBTrACS_1940-2024_dropped.nc"),
-                huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc"),
-            ],
-            dim="record",
-        )
+        ibtracs = huracanpy.load("IBTrACS.nc")
         ibtracs = ibtracs.hrcn.sel_id(ib_ids)
         d = ibtracs.hrcn.get_density(bin_size=5, method="line")
         densities[1] += d

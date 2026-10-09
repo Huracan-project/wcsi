@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 
 def main():
-    ibtracs = huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
+    ibtracs = huracanpy.load("IBTrACS.nc")
     tracks_era5 = huracanpy.load("ERA5.nc")
     tracks_jra3q = huracanpy.load("JRA3Q.nc")
     matched_lmi = match_lmi(ibtracs, tracks_era5, tracks_jra3q)
@@ -26,11 +26,17 @@ def match_lmi(ibtracs, tracks_era5, tracks_jra3q):
     ibtracs_tc_lmi = ibtracs_tc_lmi.assign(track_id=("record", track_ids))
 
     matched_lmi = huracanpy.assess.match(
-        [ibtracs_tc_lmi, tracks_era5, tracks_jra3q],
-        ["ibtracs", "era5", "jra3q"],
-        max_dist=165,
+        [ibtracs_tc_lmi, tracks_era5],
+        ["ibtracs", "era5"],
+        max_dist=444,
     )
-    matched_lmi = matched_lmi[matched_lmi.id_ibtracs.astype(str) != "nan"]
+    matched_lmi_jra = huracanpy.assess.match(
+        [ibtracs_tc_lmi, tracks_jra3q],
+        ["ibtracs", "jra3q"],
+        max_dist=444,
+    )
+
+    matched_lmi = matched_lmi.merge(matched_lmi_jra, on="id_ibtracs", how="outer")
 
     matched_lmi["year"] = np.zeros(len(matched_lmi), dtype=int)
     matched_lmi["lat"] = np.zeros(len(matched_lmi))

@@ -33,19 +33,10 @@ def year(table, start_year, end_year=None):
 
 
 def categories(table, subset, invests=False, label="era5"):
-    hits = table[
-        (table.id_ibtracs != "") & table[subset] & ~table[f"weak_match_{label}"]
-    ]
-
-    weak_matches = table[
-        (table.id_ibtracs != "") & table[subset] & table[f"weak_match_{label}"]
-    ]
-    weak_matches = weak_matches[~np.isin(weak_matches.id_ibtracs, hits.id_ibtracs)]
+    hits = table[(table.id_ibtracs != "") & table[subset]]
 
     misses = table[
-        (table.id_ibtracs != "")
-        & ~np.isin(table.id_ibtracs, hits.id_ibtracs)
-        & ~np.isin(table.id_ibtracs, weak_matches.id_ibtracs)
+        (table.id_ibtracs != "") & ~np.isin(table.id_ibtracs, hits.id_ibtracs)
     ]
 
     false_alarms = table[(table.id_ibtracs == "") & table[subset]]
@@ -54,6 +45,6 @@ def categories(table, subset, invests=False, label="era5"):
         invests = false_alarms[false_alarms[f"id_superbt_{label}"] != ""]
         false_alarms = false_alarms[false_alarms[f"id_superbt_{label}"] == ""]
 
-        return hits, weak_matches, misses, false_alarms, invests
+        return hits, misses, false_alarms, invests
     else:
-        return hits, weak_matches, misses, false_alarms
+        return hits, misses, false_alarms

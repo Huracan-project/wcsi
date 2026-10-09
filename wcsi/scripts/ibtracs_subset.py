@@ -1,6 +1,7 @@
 import huracanpy
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
 def main():
@@ -37,23 +38,20 @@ def main():
     ibtracs["mslp"].attrs["units"] = "hPa"
     ibtracs = ibtracs.drop_vars("wmo_agency")
 
-    # Select for tropical storms/6-hourly data
-    ibtracs_6h_ts, ibtracs_dropped = drop_tracks(ibtracs)
-
-    ibtracs_summary = generate_summary(ibtracs_6h_ts, ibtracs_dropped)
+    ibtracs_summary = generate_summary(ibtracs)
     ibtracs_summary.to_parquet("ibtracs_summary.parquet")
 
-    ibtracs_6h_ts.hrcn.save("IBTrACS_6h_1940-2024_Tropical-Storms.nc")
-    ibtracs_dropped.hrcn.save("IBTrACS_1940-2024_dropped.nc")
+    # Save 6-hourly data
+    ibtracs.hrcn.save("IBTrACS.nc")
 
     # SuperBT
-    superbt = huracanpy.load(source="superbt").rename(
-        tccode="nature", vmax="wind", pmin="mslp"
-    )
-    superbt["wind"] = (
-        "record", superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values
-    )
-    superbt.hrcn.save("superbt.nc")
+    # superbt = huracanpy.load(source="superbt").rename(
+    #     tccode="nature", vmax="wind", pmin="mslp"
+    # )
+    # superbt["wind"] = (
+    #     "record", superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values
+    # )
+    # superbt.hrcn.save("superbt.nc")
 
 
 def correct_winds(ibtracs):
@@ -71,56 +69,40 @@ def correct_winds(ibtracs):
     ibtracs["wind"][winds_10min] = ibtracs.wind[winds_10min] * 1.11 / 1.03
 
 
-def drop_tracks(ibtracs):
-    # Only include 6-hourly data
-    ibtracs_6h = ibtracs.isel(record=np.where(ibtracs.time.dt.hour % 6 == 0)[0])
-
-    # Only include storms that are labelled as tropical storm for at least one point
-    ibtracs_6h_ts = ibtracs_6h.hrcn.trackswhere(
-        lambda track: (track.nature == "TS").any() and track.time.size >= 4
-    )
-
-    # Account for tracks that have been removed by these criteria
-    track_ids = np.unique(ibtracs.track_id)
-    track_ids = track_ids[~np.isin(track_ids, np.unique(ibtracs_6h_ts.track_id))]
-    ibtracs_dropped = ibtracs.hrcn.sel_id(track_ids)
-
-    return ibtracs_6h_ts, ibtracs_dropped
-
-
-def generate_summary(ibtracs_6h_ts, ibtracs_dropped):
-    # Create a summary of tracks and why they are/aren't dropped
+def generate_summary(ibtracs):
+    # Create a summary of tracks and why they may be dropped
     # Do they have tropical nature/are they shorter than 1 day
-    track_ids = np.unique(ibtracs_6h_ts.track_id)
-    track_nature = np.full(len(track_ids), "TS", dtype="U2")
-    nt_6h = ibtracs_6h_ts["time"].groupby(ibtracs_6h_ts.track_id).count().values
+    track_ids = np.unique(ibtracs.track_id)
 
-    track_ids_dropped = np.unique(ibtracs_dropped.track_id)
-    track_nature_dropped = []
-    nt_6h_dropped = []
+    track_nature = []
+    nt_6h = []
 
-    for track_id in track_ids_dropped:
-        track = ibtracs_dropped.hrcn.sel_id(track_id)
+    print("Generating summary")
+    for track_id in tqdm(track_ids):
+        track = ibtracs.hrcn.sel_id(track_id)
+
         if (track.nature == "TS").any():
-            track_nature_dropped.append("TS")
-        elif (track.nature == "NR").all():
-            track_nature_dropped.append("NR")
+            track_nature.append("TS")
+        elif (track.nature == "MX").any():
+            track_nature.append("MX")
+        elif (track.nature == "NR").any():
+            track_nature.append("NR")
+        elif (track.nature == "SS").any():
+            track_nature.append("SS")
+        elif (track.nature == "ET").any():
+            track_nature.append("ET")
+        elif (track.nature == "DS").any():
+            track_nature.append("DS")
         else:
-            track_nature_dropped.append("")
+            track_nature.append("")
 
-        nt_6h_dropped.append(track.isel(record=track.time.dt.hour % 6 == 0).time.size)
+        nt_6h.append(track.isel(record=track.time.dt.hour % 6 == 0).time.size)
 
     ibtracs_summary = pd.DataFrame(
         data=dict(
-            id_ibtracs=np.concatenate([track_ids, track_ids_dropped]),
-            ibtracs_nature=np.concatenate([track_nature, track_nature_dropped]),
-            ibtracs_points_6h=np.concatenate([nt_6h, nt_6h_dropped]),
-            ibtracs_dropped=np.concatenate(
-                [
-                    np.zeros(len(track_ids), dtype=bool),
-                    np.ones(len(track_ids_dropped), dtype=bool),
-                ]
-            ),
+            id_ibtracs=track_ids,
+            ibtracs_nature=track_nature,
+            ibtracs_points_6h=nt_6h,
         )
     )
 

@@ -12,7 +12,6 @@ import pandas as pd
 import seaborn as sb
 from scipy.ndimage import uniform_filter1d
 from tqdm import tqdm
-import xarray as xr
 
 from wcsi.summary import filters
 
@@ -447,7 +446,7 @@ def showlimit(ax, x, y, ylim, above=True, color="k"):
 def main(
     data_path: Path = Path("."),
     reanalysis_fname: str = "ERA5.nc",
-    ibtracs_fname: list[str] | None = None,
+    ibtracs_fname: str = "IBTrACS.nc",
     superbt_fname: str = "superbt.nc",
     summary_fname: str = "WCSI_summary_all.parquet",
     reanalysis_label="era5",
@@ -464,16 +463,7 @@ def main(
     plot_path
     """
     tracks = huracanpy.load(str(data_path / reanalysis_fname))
-
-    if ibtracs_fname is None:
-        ibtracs_fname = [
-            "IBTrACS_6h_1940-2024_Tropical-Storms.nc",
-            "IBTrACS_1940-2024_dropped.nc",
-        ]
-    ibtracs = xr.concat(
-        [huracanpy.load(str(data_path / fname)) for fname in ibtracs_fname],
-        dim="record",
-    )
+    ibtracs = huracanpy.load(str(data_path / ibtracs_fname))
     superbt = huracanpy.load(str(data_path / superbt_fname))
     # Simplify superBT natures
     superbt.nature[np.isin(superbt.nature, ["TD", "HU", "TY", "TC", "ST"])] = "TS"
@@ -563,22 +553,22 @@ def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
 
 
 def plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
-    hits, weak_hits, misses, false_alarms, invests = filters.categories(
+    hits, misses, false_alarms, invests = filters.categories(
         table, "WCSI", invests=True, label=reanalysis_label
     )
 
     (plot_path / "hit").mkdir(exist_ok=True)
-    for prefix, subset in [("hit", hits), ("weak_hit", weak_hits)]:
-        for n, row in tqdm(subset.iterrows(), total=len(subset)):
-            track_id = row[f"id_{reanalysis_label}"]
-            fname = plot_path / "hit" / f"{prefix}_{row.id_ibtracs}_{track_id}.png"
-            if not fname.exists():
-                track = tracks.hrcn.sel_id(track_id)
-                ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
-                fig, axes = track_overview(
-                    track=track, obs=ib, dataset_label=reanalysis_label.upper()
-                )
-                save_and_close(fig, fname)
+
+    for n, row in tqdm(hits.iterrows(), total=len(hits)):
+        track_id = row[f"id_{reanalysis_label}"]
+        fname = plot_path / "hit" / f"hit_{row.id_ibtracs}_{track_id}.png"
+        if not fname.exists():
+            track = tracks.hrcn.sel_id(track_id)
+            ib = ibtracs.hrcn.sel_id(row.id_ibtracs)
+            fig, axes = track_overview(
+                track=track, obs=ib, dataset_label=reanalysis_label.upper()
+            )
+            save_and_close(fig, fname)
 
     (plot_path / "miss").mkdir(exist_ok=True)
     for n, row in tqdm(misses.iterrows(), total=len(misses)):

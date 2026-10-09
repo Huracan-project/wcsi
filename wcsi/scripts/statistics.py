@@ -2,7 +2,7 @@
 Calculate summary statistics for different subsets of tracks
 
 Statistics
-    - Hits (weak hits), Misses, False Alarms (invests)
+    - Hits, Misses, False Alarms (invests)
     - Probability of Detection, False alarm rate, critical success index
         - Add uncertainty from binomial distribution
 """
@@ -11,7 +11,6 @@ import huracanpy
 import numpy as np
 import pandas as pd
 from scipy.stats import binomtest
-import xarray as xr
 
 from wcsi.summary import filters
 
@@ -24,13 +23,7 @@ def main():
     stats = _main(summary, start_year=2007, invests=True)
     stats.to_csv("WCSI_scores_invests_2007-2024.csv")
 
-    ibtracs = xr.concat(
-        [
-            huracanpy.load("IBTrACS_1940-2024_dropped.nc"),
-            huracanpy.load("IBTrACS_6h_1940-2024_Tropical-Storms.nc"),
-        ],
-        dim="record",
-    )
+    ibtracs = huracanpy.load("IBTrACS.nc")
     era5 = huracanpy.load("ERA5.nc")
     era5_basin = era5.hrcn.get_basin(convention="ibtracs").values
     era5_track_id = era5.track_id.values
@@ -106,32 +99,23 @@ def _main(
 
 def get_stats(table, total, label, invests=False):
 
-    matches = table[
-        (table[f"id_{label}"] != -1)
-        & ~table[f"weak_match_{label}"]
-        & (table.id_ibtracs != "")
-    ]
-    weak_matches = table[table[f"weak_match_{label}"]]
-    weak_matches = weak_matches[~np.isin(weak_matches.id_ibtracs, matches.id_ibtracs)]
+    matches = table[(table[f"id_{label}"] != -1) & (table.id_ibtracs != "")]
 
     # Total numbers
     hit = matches.id_ibtracs.nunique()
-    weak_hit = weak_matches.id_ibtracs.nunique()
-    miss = total - hit - weak_hit
+    miss = total - hit
     fa = table.loc[
         (table[f"id_{label}"] != -1) & (table.id_ibtracs == ""), f"id_{label}"
     ].nunique()
 
     stats = dict(
         hit=hit,
-        weak_hit=weak_hit,
         miss=miss,
         false_alarm=fa,
     )
 
     # Scores
     statistic_with_errors(stats, "pod", hit, total)
-    statistic_with_errors(stats, "pod_weak", hit + weak_hit, total)
     statistic_with_errors(stats, "far", fa, hit + fa)
     statistic_with_errors(stats, "csi", hit, total + fa)
 
