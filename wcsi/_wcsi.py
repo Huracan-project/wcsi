@@ -89,7 +89,7 @@ def wcsi(
         if cps_vtl is not None:
             cps_vtl = uniform_filter1d(
                 track_id,
-                np.asarray(cps_vtl),
+                cps_vtl,
                 size=filter_size,
                 idx=idx,
                 inverse=inverse,
@@ -97,7 +97,7 @@ def wcsi(
         if cps_vtu is not None:
             cps_vtu = uniform_filter1d(
                 track_id,
-                np.asarray(cps_vtu),
+                cps_vtu,
                 size=filter_size,
                 idx=idx,
                 inverse=inverse,
@@ -127,10 +127,7 @@ def wcsi(
                 track_id, vo850, size=filter_size, idx=idx, inverse=inverse
             )
 
-        tc = tc & (
-            huracanpy.calc.delta(vo850, track_id, centering="adaptive")
-            > intensification_threshold
-        )
+        tc = tc & (np.gradient(vo850) > intensification_threshold)
 
     # Coherent
     if coherent and relative_vorticity is not None:
