@@ -88,11 +88,19 @@ def wcsi(
             )
         if cps_vtl is not None:
             cps_vtl = uniform_filter1d(
-                track_id, cps_vtl, size=filter_size, idx=idx, inverse=inverse
+                track_id,
+                np.asarray(cps_vtl),
+                size=filter_size,
+                idx=idx,
+                inverse=inverse,
             )
         if cps_vtu is not None:
             cps_vtu = uniform_filter1d(
-                track_id, cps_vtu, size=filter_size, idx=idx, inverse=inverse
+                track_id,
+                np.asarray(cps_vtu),
+                size=filter_size,
+                idx=idx,
+                inverse=inverse,
             )
 
     # Initialise to True everywhere and succesively apply other filters
