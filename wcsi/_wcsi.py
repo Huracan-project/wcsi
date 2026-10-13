@@ -1,5 +1,6 @@
 from typing import Any
 
+import huracanpy
 import numpy as np
 from numpy.typing import NDArray
 import xarray as xr
@@ -117,11 +118,11 @@ def wcsi(
             vo850 = uniform_filter1d(
                 track_id, vo850, size=filter_size, idx=idx, inverse=inverse
             )
-        else:
-            # Still need a padded index for gradient calculation, but it has not been
-            # calculated if the filter size is unused
-            idx, inverse = padded_index(track_id, pad=1, pad_location="inner")
-        tc = tc & (np.gradient(vo850[idx])[inverse] > intensification_threshold)
+
+        tc = tc & (
+            huracanpy.calc.delta(vo850, track_id, centering="adaptive")
+            > intensification_threshold
+        )
 
     # Coherent
     if coherent and relative_vorticity is not None:
