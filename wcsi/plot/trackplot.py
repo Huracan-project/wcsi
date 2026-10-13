@@ -20,7 +20,7 @@ app = App()
 projection = EqualEarth
 transform = Geodetic()
 
-extents = dict(
+extents_paper = dict(
     NATL=[-100, 40, 5, 70],
     MED=[-120, 60, 0, 90],
     ENP=[-180, 0, 0, 90],
@@ -33,18 +33,18 @@ extents = dict(
     SA=[-120, 60, -90, 0],
 )
 
-# extents = dict(
-#     NATL=[-120, 60, 0, 90],
-#     MED=[-120, 60, 0, 90],
-#     ENP=[-180, 0, 0, 90],
-#     CP=[120, 300, 0, 90],
-#     WNP=[60, 240, 0, 90],
-#     NI=[0, 180, 0, 90],
-#     SI=[0, 180, -90, 0],
-#     AUS=[60, 240, -90, 0],
-#     SP=[120, 300, -90, 0],
-#     SA=[-120, 60, -90, 0],
-# )
+extents_default = dict(
+    NATL=[-120, 60, 0, 90],
+    MED=[-120, 60, 0, 90],
+    ENP=[-180, 0, 0, 90],
+    CP=[120, 300, 0, 90],
+    WNP=[60, 240, 0, 90],
+    NI=[0, 180, 0, 90],
+    SI=[0, 180, -90, 0],
+    AUS=[60, 240, -90, 0],
+    SP=[120, 300, -90, 0],
+    SA=[-120, 60, -90, 0],
+)
 
 # Colour for each cyclone category
 colors = mpl.colormaps["okabe_ito"](np.linspace(0, 1, 8))
@@ -109,8 +109,16 @@ mosaic = """
 
 
 def track_overview(
-    track=None, obs=None, dataset_label="ERA5", obs_label="IBTrACS", obs_legend_ncol=2
+    track=None,
+    obs=None,
+    dataset_label="ERA5",
+    obs_label="IBTrACS",
+    obs_legend_ncol=2,
+    extents=None,
 ):
+    if extents is None:
+        extents = extents_default
+
     if track is not None:
         tmin, tmax = track.time.min(), track.time.max()
         if obs is not None:
@@ -121,7 +129,7 @@ def track_overview(
         raise ValueError("Must pass at least one track")
 
     basin = guess_basin(track, obs)
-    fig, axes = create_figure(basin, tmin, tmax)
+    fig, axes = create_figure(basin, tmin, tmax, extents)
     lines_axes = []
 
     if track is not None:
@@ -246,7 +254,7 @@ def guess_basin(track, ib):
     return basin
 
 
-def create_figure(basin, tmin, tmax):
+def create_figure(basin, tmin, tmax, extents):
     central_lon = 0.5 * (extents[basin][0] + extents[basin][1])
     fig, axes = plt.subplot_mosaic(
         mosaic,
@@ -484,7 +492,7 @@ def main(
     _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
 
     # Plot all tracks
-    # plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
+    plot_all(tracks, ibtracs, superbt, table, reanalysis_label, plot_path)
 
 
 def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
@@ -499,7 +507,11 @@ def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
     track = tracks.hrcn.sel_id(table_[f"id_{reanalysis_label}"])
     ib = ibtracs.hrcn.sel_id(table_.id_ibtracs)
     fig, ax = track_overview(
-        track, ib, dataset_label=reanalysis_label.upper(), obs_legend_ncol=1
+        track,
+        ib,
+        dataset_label=reanalysis_label.upper(),
+        obs_legend_ncol=1,
+        extents=extents_paper,
     )
     ax["A"].set_title("Hurricane Iris 1995")
     fig.savefig(plot_path / "iris_1995.pdf")
@@ -510,7 +522,11 @@ def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
     track = tracks.hrcn.sel_id(table_[f"id_{reanalysis_label}"])
     ib = ibtracs.hrcn.sel_id(table_.id_ibtracs)
     fig, ax = track_overview(
-        track, ib, dataset_label=reanalysis_label.upper(), obs_legend_ncol=1
+        track,
+        ib,
+        dataset_label=reanalysis_label.upper(),
+        obs_legend_ncol=1,
+        extents=extents_paper,
     )
     ax["A"].set_title("Hurricane Earl 1986")
     fig.savefig(plot_path / "earl_1986.pdf")
@@ -527,6 +543,7 @@ def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
             dataset_label=reanalysis_label.upper(),
             obs_label="SuperBT",
             obs_legend_ncol=1,
+            extents=extents_paper,
         )
         ax["A"].set_title("Invest b8l 2013")
         fig.savefig(plot_path / "invest_b8l_2013.pdf")
@@ -541,7 +558,7 @@ def _main(tracks, ibtracs, superbt, table, reanalysis_label, plot_path):
         ]
         for m, (n, row) in enumerate(tqdm(table_.iterrows())):
             track = tracks.hrcn.sel_id(row.id_era5)
-            fig, ax = track_overview(track)
+            fig, ax = track_overview(track, extents=extents_paper)
             ax["A"].set_title(f"False Positive {titles[m]} ({row.storm_start.year})")
             fig.savefig(
                 plot_path / f"false-positive_{row.id_era5}_{row.storm_start.year}.pdf"
