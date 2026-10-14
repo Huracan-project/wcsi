@@ -1,22 +1,32 @@
 [project]
 name = "wcsi"
-version = "1.0.0"
+version = "2.1.0"
 dependencies = [
-  "cartopy",
-  "huracanpy",
-  "matplotlib",
-  "numpy",
-  "pandas",
-  "scipy",
-  "tqdm",
-  "docopt",
+    "cartopy",
+    "cf_units",
+    "cyclopts",
+    "huracanpy",
+    "matplotlib",
+    "matplotlib-venn",
+    "numpy",
+    "pandas",
+    "python-dateutil",
+    "scipy",
+    "scitools-iris",
+    "tqdm",
+    "windspharm",
+    "xarray"
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.scripts]
-wcsi = "wcsi.scripts.wcsi:main"
-wcsi-nature = "wcsi.scripts.add_nature:main"
+wcsi = "wcsi.scripts.wcsi:app"
+wcsi-nature = "wcsi.scripts.add_nature:app"
+
+[tool.ruff.lint]
+ignore = ["I001", "C408", "DTZ001", "RUF022"]
 
 [tool.pyrefly]
-project-includes = [
-  "**/*.py*",
-]
+project-includes = ["**/*.py*"]
