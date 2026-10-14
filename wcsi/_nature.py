@@ -139,22 +139,26 @@ def nature(
 
 
 def smooth_excursions(track_id, criteria, *, min_count, starts=None, ends=None):
+    # Avoid errors where criteria is false everywhere
+    if ~np.any(criteria):
+        return criteria, np.array([], dtype=int), np.array([], dtype=int)
+
     # +1 to start_tc index because we want the index of the first TC point not the index
     # of the last non-TC point
     # Where do cyclones start/end being TC and start/end being WCS but not TC
     if starts is None:
         starts = np.where(~criteria[:-1] & criteria[1:])[0] + 1
+
+        # First point is a TC point and is missed
+        if criteria[0]:
+            starts = np.concat([[0], starts])
+
     if ends is None:
         ends = np.where(criteria[:-1] & ~criteria[1:])[0]
 
-    # Exceptions
-    # First point is a TC point and is missed
-    if starts[0] > ends[0]:
-        starts = np.concat([[0], starts])
-
-    # Last point is a TC point, so end point is missed
-    if len(starts) > len(ends):
-        ends = np.concat([ends, [len(criteria) - 1]])
+        # Last point is a TC point, so end point is missed
+        if criteria[-1]:
+            ends = np.concat([ends, [len(criteria) - 1]])
 
     # Look for points where the last point of a TC is within min_count of the next TC
     # identification for the same track_id
@@ -162,6 +166,10 @@ def smooth_excursions(track_id, criteria, *, min_count, starts=None, ends=None):
         track_id[starts[1:]] == track_id[ends[:-1]]
     )
     close_idx = np.where(close)[0] + 1
+
+    if len(close_idx) == 0:
+        # Nothing to join return inputs
+        return criteria, starts, ends
 
     # idx of all joined sequences
     # Start of first sequence to end of second sequence
