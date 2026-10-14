@@ -140,7 +140,7 @@ def nature(
 
 def smooth_excursions(track_id, criteria, *, min_count, starts=None, ends=None):
     # Avoid errors where criteria is false everywhere
-    if ~np.any(criteria):
+    if ~np.any(criteria) and (starts is None or ends is None):
         return criteria, np.array([], dtype=int), np.array([], dtype=int)
 
     # +1 to start_tc index because we want the index of the first TC point not the index

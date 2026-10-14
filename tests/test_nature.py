@@ -2,7 +2,7 @@ import pytest
 
 import numpy as np
 
-from wcsi._nature import smooth_excursions
+from wcsi._nature import nature, smooth_excursions
 
 
 @pytest.mark.parametrize(
@@ -37,3 +37,17 @@ def test_smooth_excursions(track_id, is_wcsi):
 
     for pair in [(result, result_2), (starts, starts_2), (ends, ends_2)]:
         assert np.all(pair[0] == pair[1])
+
+
+def test_nature():
+    # Check that a WCS region is connected to a WCSI region
+    nat = nature(
+        track_id=np.zeros(10),
+        b=np.zeros(10),
+        vtl=np.ones(10),
+        vtu=np.array([-1] * 5 + [1] * 5),
+        vortex=np.zeros(10, dtype=bool),
+        wcsi=np.array([False] * 5 + [True] * 5),
+    )
+
+    assert (nat == "TC").all()
