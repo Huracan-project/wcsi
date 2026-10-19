@@ -45,13 +45,14 @@ def main():
     ibtracs.hrcn.save("IBTrACS.nc")
 
     # SuperBT
-    # superbt = huracanpy.load(source="superbt").rename(
-    #     tccode="nature", vmax="wind", pmin="mslp"
-    # )
-    # superbt["wind"] = (
-    #     "record", superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values
-    # )
-    # superbt.hrcn.save("superbt.nc")
+    superbt = huracanpy.load(source="superbt").rename(
+        tccode="nature", vmax="wind", pmin="mslp"
+    )
+    superbt["wind"] = (
+        "record",
+        superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values,
+    )
+    superbt.hrcn.save("superbt.nc")
 
 
 def correct_winds(ibtracs):
@@ -76,6 +77,7 @@ def generate_summary(ibtracs):
 
     track_nature = []
     nt_6h = []
+    category = []
 
     print("Generating summary")
     for track_id in tqdm(track_ids):
@@ -98,11 +100,14 @@ def generate_summary(ibtracs):
 
         nt_6h.append(track.isel(record=track.time.dt.hour % 6 == 0).time.size)
 
+        category.append(track.hrcn.get_saffir_simpson_category.values.max())
+
     ibtracs_summary = pd.DataFrame(
         data=dict(
             id_ibtracs=track_ids,
             ibtracs_nature=track_nature,
             ibtracs_points_6h=nt_6h,
+            ibtracs_category=category,
         )
     )
 
