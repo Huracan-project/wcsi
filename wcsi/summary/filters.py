@@ -39,7 +39,9 @@ def categories(table, subset, invests=False, label="era5"):
         (table.id_ibtracs != "") & ~np.isin(table.id_ibtracs, hits.id_ibtracs)
     ]
 
-    false_alarms = table[(table.id_ibtracs == "") & table[subset]]
+    false_alarms = table[
+        (table.id_ibtracs == "") & table[subset] & ~np.isin(table.id_era5, hits.id_era5)
+    ]
 
     if invests:
         invests = false_alarms[false_alarms[f"id_superbt_{label}"] != ""]
