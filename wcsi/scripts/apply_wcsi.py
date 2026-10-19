@@ -64,7 +64,7 @@ def main(filename_in, filename_out=None):
             tracks.cps_b,
             tracks.cps_vtl,
             tracks.cps_vtu,
-            np.isnan(tracks.mslp_min),
+            closed_mslp,
             tracks.wcsi,
         ),
     )
