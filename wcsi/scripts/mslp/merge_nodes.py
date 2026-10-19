@@ -2,6 +2,8 @@
 track points
 """
 
+from pathlib import Path
+
 import huracanpy
 import numpy as np
 import pandas as pd
@@ -62,6 +64,9 @@ def main(tracks_fname, nodes_fname, start_year):
 
     tracks = xr.concat(tracks, dim="record").sortby(["track_id", "time"])
     huracanpy.save(tracks, f"{tracks_fname.split('.')[0]}-mslp.nc")
+
+    for year in tqdm(range(start_year, 2024 + 1)):
+        Path(f"{tracks_fname.split('.')[0]}_{year}.nc").unlink()
 
 
 def load_nodefile(filename):
