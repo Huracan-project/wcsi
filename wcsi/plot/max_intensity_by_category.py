@@ -7,7 +7,7 @@ import pandas as pd
 from wcsi import wcsi
 from wcsi.summary import filters
 
-bounds = np.array([0, 1, 2, 5, 10, 20, 40, 80, 160, 299])
+bounds = np.array([0, 0.5, 2, 5, 10, 20, 40, 80, 160, 299])
 norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 bins = np.arange(870, 1020 + 1, 5)
 bins_lon = np.arange(0, 75 + 1, 5)
@@ -63,9 +63,8 @@ def main():
         ("d", "WCS"),
         ("e", "WCSI"),
     ]:
-        fa = tracks.hrcn.sel_id(
-            summary.loc[summary[subset] & (summary.id_ibtracs == ""), "id_era5"]
-        )
+        _hits, _misses, false_alarms = filters.categories(summary, subset=subset)
+        fa = tracks.hrcn.sel_id(np.unique(false_alarms.id_era5))
         if subset == "H2017":
             fa["h2017"] = (
                 "record",
@@ -85,7 +84,13 @@ def main():
                     filter_size=None,
                 ),
             )
-        fa = fa.isel(record=fa[subset.lower()]).hrcn.get_apex_vals("mslp", stat="min")
+
+        if subset == "WCSI":
+            fa = fa.isel(record=fa.nature == "TC")
+        else:
+            fa = fa.isel(record=fa[subset.lower()])
+
+        fa = fa.hrcn.get_apex_vals("mslp", stat="min")
         counts, _, _, im = axes[ax].hist2d(
             fa.mslp, np.abs(fa.lat), bins=[bins, bins_lon], **hist2d_kwargs
         )
