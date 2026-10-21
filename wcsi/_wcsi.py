@@ -48,8 +48,6 @@ def wcsi(
     filter_any
     npoints
         Number of consecutive points that all criteria need to be met
-    basin
-        Restrict subsetting to a specific basin. Determined by maximum intensity
     b_threshold
         Maximum value of the cyclone phase space asymmetry parameter
     vtl_threshold
@@ -76,7 +74,7 @@ def wcsi(
 
     Returns
     -------
-    The subset of tracks that meet the criteria and a table summarising all the tracks
+    An array with True where points are identified as WCSI
     """
 
     # Apply smoothing

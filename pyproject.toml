@@ -20,6 +20,16 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+docs = [
+    "IPython",
+    "ipykernel",
+    "myst-parser",
+    "nbsphinx",
+    "pydata-sphinx-theme",
+    "sphinx",
+    "sphinx-copybutton",
+    "sphinx-autodoc-typehints",
+]
 
 [project.scripts]
 wcsi = "wcsi.scripts.wcsi:app"

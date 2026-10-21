@@ -41,6 +41,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pandas": ("https://pandas.pydata.org/pandas-docs/stable", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None),
 }
 
 # myst parser (markdown)

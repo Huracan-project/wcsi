@@ -6,5 +6,6 @@ Ragged
 .. autosummary::
     :toctree: _autosummary
 
-    padded_index
     mask_short
+    padded_index
+    uniform_filter1d

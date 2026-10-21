@@ -17,7 +17,7 @@ def nature(
     b_threshold: float = 15,
     vtl_threshold: float = 0,
     vtu_threshold: float = 0,
-    filter_size=5,
+    filter_size: int | None = 5,
     min_count: int = 4,
     et: bool = False,
     smooth: bool = False,
@@ -38,6 +38,7 @@ def nature(
 
     Parameters
     ----------
+    track_id
     b
         Cyclone phase space asymmetry
     vtl
@@ -58,6 +59,7 @@ def nature(
     vtu_threshold
         The threshold of the upper-level warm-core parameter, above which is considered
         to be a tropical cyclone
+    filter_size
     min_count
         Number of
     et
