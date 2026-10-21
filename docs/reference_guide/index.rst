@@ -6,6 +6,7 @@ Reference Guide
     :hidden:
 
     self
+    scripts
     wcsi
     summary
     ragged

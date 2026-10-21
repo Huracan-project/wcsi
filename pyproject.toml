@@ -33,7 +33,6 @@ docs = [
 
 [project.scripts]
 wcsi = "wcsi.scripts.wcsi:app"
-wcsi-nature = "wcsi.scripts.add_nature:app"
 
 [tool.ruff.lint]
 ignore = ["I001", "C408", "DTZ001", "RUF022"]
