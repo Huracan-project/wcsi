@@ -25,6 +25,7 @@ def wcsi(
     intensification_threshold: float | None = 0,
     coherent: bool = False,
     filter_size: int | None = 5,
+    vort_warm_core_filter_size: int | None = None,
 ) -> NDArray[np.bool]:
     """
 
@@ -69,6 +70,9 @@ def wcsi(
     filter_size
         Size of running mean (in number of points) to apply to the cyclone phase space
         parameters and 850hPa vorticity (for intensification) before thresholding
+    vort_warm_core_filter_size
+        Use to also apply a running mean filter to the vertical difference in vorticity
+        if it is used
 
     Returns
     -------
@@ -142,13 +146,14 @@ def wcsi(
 
     # Vorticity based warm core threshold
     if vort_warm_core_threshold is not None and relative_vorticity is not None:
-        tc = tc & (
-            (
-                relative_vorticity.sel(pressure=850)
-                - relative_vorticity.sel(pressure=200)
-            ).values
-            > vort_warm_core_threshold
-        )
+        dvort = (
+            relative_vorticity.sel(pressure=850) - relative_vorticity.sel(pressure=200)
+        ).values
+
+        if vort_warm_core_filter_size is not None and vort_warm_core_filter_size > 1:
+            dvort = uniform_filter1d(track_id, dvort, vort_warm_core_filter_size)
+
+        tc = tc & (dvort > vort_warm_core_threshold)
 
     # Over ocean
     if filter_all is not None:
