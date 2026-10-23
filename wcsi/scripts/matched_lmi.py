@@ -20,6 +20,11 @@ def main():
     matched_lmi = match_lmi(ibtracs, datasets)
     matched_lmi.to_parquet("matched_lmi.parquet")
 
+    superbt = huracanpy.load("superbt.nc")
+    superbt.nature[:] = "TS"
+    matched_lmi = match_lmi(superbt, datasets)
+    matched_lmi.to_parquet("matched_lmi_superbt.parquet")
+
 
 def match_lmi(ibtracs, datasets):
     # Select all tropical cyclone points with valid MSLP data
@@ -67,6 +72,14 @@ def match_lmi(ibtracs, datasets):
                 track = tracks.hrcn.sel_id(row[f"id_{dataset}"])
                 track = track.isel(record=np.where(track.time == lmi_ib.time.values)[0])
                 matched_lmi.loc[n, f"mslp_{dataset}"] = track.mslp.values[()]
+
+                if dataset in ["era5", "jra3q"]:
+                    for var in ["cps_b", "cps_vtl", "cps_vtu"]:
+                        value = track[var].values[()]
+                        if var == "cps_b":
+                            value = np.abs(value)
+
+                        matched_lmi.loc[n, f"{var}_{dataset}"] = value
 
     # Track IDs as integers. pandas likes to mix data types
     for dataset in datasets:

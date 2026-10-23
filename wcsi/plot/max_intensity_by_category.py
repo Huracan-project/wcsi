@@ -7,7 +7,7 @@ import pandas as pd
 from wcsi import wcsi
 from wcsi.summary import filters
 
-bounds = np.array([0, 0.5, 2, 5, 10, 20, 40, 80, 160, 299])
+bounds = np.array([0, 1, 2, 5, 10, 20, 40, 60, 71])
 norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 bins = np.arange(870, 1020 + 1, 5)
 bins_lon = np.arange(0, 75 + 1, 5)
@@ -21,26 +21,24 @@ hist2d_kwargs = dict(
 def main():
     fig, axes = plt.subplot_mosaic(
         """
-        aaabbb
-        aaabbb
-        aaabbb
-        yyyyyy
-        ccddee
-        ccddee
-        ccddee
-        zzzzzz
-        111111
+        abc
+        yyy
+        def
+        zzz
+        111
         """,
-        figsize=(8, 8),
+        figsize=(8, 6),
+        height_ratios=[4, 1, 4, 1, 1],
     )
     for ax in ["y", "z"]:
         axes[ax].set_axis_off()
+    fig.subplots_adjust(wspace=0.1)
 
     summary = pd.read_parquet("WCSI_summary_all.parquet")
-    summary = filters.year(summary, 1979)
+    summary = filters.year(summary, 2007)
 
     matched_lmi = pd.read_parquet("matched_lmi.parquet")
-    matched_lmi = matched_lmi[(matched_lmi.year >= 1979) & (matched_lmi.id_era5 != -1)]
+    matched_lmi = matched_lmi[(matched_lmi.year >= 2007) & (matched_lmi.id_era5 != -1)]
 
     lmi_hits = matched_lmi[
         np.isin(matched_lmi.id_ibtracs, summary.id_ibtracs[summary.WCSI])
@@ -49,7 +47,13 @@ def main():
         ~np.isin(matched_lmi.id_ibtracs, summary.id_ibtracs[summary.WCSI])
     ]
 
-    for ax, df in [("a", lmi_hits), ("b", lmi_miss)]:
+    matched_lmi = pd.read_parquet("matched_lmi_superbt.parquet")
+    matched_lmi = matched_lmi[(matched_lmi.year >= 2007) & (matched_lmi.id_era5 != -1)]
+    lmi_invest = matched_lmi[
+        np.isin(matched_lmi.id_ibtracs, summary.id_superbt_era5[summary.WCSI])
+    ]
+
+    for ax, df in [("a", lmi_hits), ("b", lmi_miss), ("c", lmi_invest)]:
         counts, _, _, _ = axes[ax].hist2d(
             df.mslp_ibtracs, df.mslp_era5, bins=bins, **hist2d_kwargs
         )
@@ -59,11 +63,13 @@ def main():
 
     tracks = huracanpy.load("ERA5.nc")
     for ax, subset in [
-        ("c", "H2017"),
-        ("d", "WCS"),
-        ("e", "WCSI"),
+        ("d", "H2017"),
+        ("e", "WCS"),
+        ("f", "WCSI"),
     ]:
-        _hits, _misses, false_alarms = filters.categories(summary, subset=subset)
+        _hits, _misses, false_alarms, _invests = filters.categories(
+            summary, subset=subset, invests=True
+        )
         fa = tracks.hrcn.sel_id(np.unique(false_alarms.id_era5))
         if subset == "H2017":
             fa["h2017"] = (
@@ -94,25 +100,31 @@ def main():
         counts, _, _, im = axes[ax].hist2d(
             fa.mslp, np.abs(fa.lat), bins=[bins, bins_lon], **hist2d_kwargs
         )
-        axes[ax].set_title(f"False Alarms {subset}")
+        axes[ax].set_title("FA$_\\mathrm{EI}$ " + f"{subset}")
         axes[ax].set_xlim(900, 1020)
         print(counts.max())
 
-    for ax in ["b", "d", "e"]:
+    for ax in ["b", "c", "e", "f"]:
         axes[ax].set_yticks([])
 
-    axes["a"].set_title("Hits WCSI")
-    axes["b"].set_title("Misses WCSI")
-    axes["a"].set_ylabel("MSLP ERA5 (hPa)")
-    axes["c"].set_ylabel("|Latitude|")
-    axes["d"].set_xlabel("MSLP ERA5 (hPa)")
+    axes["a"].set_title("Hits")
+    axes["b"].set_title("Misses")
+    axes["c"].set_title("Invests")
 
-    axes["y"].text(0.5, 0.5, "MSLP IBTrACS (hPa)", ha="center")
+    axes["a"].set_xlabel("MSLP IBTrACS (hPa)")
+    axes["b"].set_xlabel("MSLP IBTrACS (hPa)")
+    axes["c"].set_xlabel("MSLP SuperBT (hPa)")
+    axes["d"].set_xlabel("MSLP ERA5 (hPa)")
+    axes["e"].set_xlabel("MSLP ERA5 (hPa)")
+    axes["f"].set_xlabel("MSLP ERA5 (hPa)")
+
+    axes["a"].set_ylabel("MSLP ERA5 (hPa)")
+    axes["d"].set_ylabel("|Latitude|")
 
     plt.colorbar(im, cax=axes["1"], orientation="horizontal")
 
-    for ax in ["a", "b", "c", "d", "e"]:
-        axes[ax].text(0.0, 1.1, f"({ax})", transform=axes[ax].transAxes)
+    for ax in ["a", "b", "c", "d", "e", "f"]:
+        axes[ax].text(0.0, 1.05, f"({ax})", transform=axes[ax].transAxes)
 
     plt.savefig("max_intensity_by_category.pdf")
 
