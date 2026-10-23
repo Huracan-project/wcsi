@@ -14,7 +14,7 @@ from wcsi.summary import filters
 
 titles = ["Hits", "Misses", "Invests", "False Alarms"]
 
-bounds = np.arange(0, 0.15, 0.01)
+bounds = np.arange(0, 0.11, 0.01)
 norm = BoundaryNorm(boundaries=bounds, ncolors=256)
 
 
@@ -27,16 +27,18 @@ def main():
     )
 
     track_ids = [np.unique(t.id_era5) for t in [hits, misses, invests, false_alarms]]
-    ib_ids = np.unique(misses[misses.id_era5 == -1].id_ibtracs)
+    ib_ids = np.unique(misses.id_ibtracs)
 
     if not Path("density_by_category.nc").exists():
         tracks = huracanpy.load("ERA5.nc")
+        tracks = tracks.isel(record=tracks.nature == "TC")
         densities = get_densities(track_ids, tracks)
 
         ibtracs = huracanpy.load("IBTrACS.nc")
         ibtracs = ibtracs.hrcn.sel_id(ib_ids)
+        ibtracs = ibtracs.isel(record=np.isin(ibtracs.nature, ["TS", "MX", "NR"]))
         d = ibtracs.hrcn.get_density(bin_size=5, method="line")
-        densities[1] += d
+        densities[1] = d
 
         densities.to_netcdf("density_by_category.nc")
     else:
@@ -71,14 +73,13 @@ def main():
         axes[n].set_title(titles[n] + f"\n{len(track_ids[n])} tracks")
         axes[n].text(0.05, 0.95, f"({ascii_lowercase[n]})", transform=axes[n].transAxes)
 
-    axes[1].set_title(titles[1] + f"\n{len(track_ids[1])} (+{len(ib_ids)}) tracks")
+    axes[1].set_title(titles[1] + f"\n{len(ib_ids)} tracks")
 
     fig.subplots_adjust(bottom=0.15)
     cbar_ax = fig.add_axes((0.1, 0.05, 0.8, 0.05))
     fig.colorbar(im, cax=cbar_ax, orientation="horizontal")
-    fig.suptitle("ERA5 track density by category (2007-2024)")
 
-    plt.savefig("fig_track_density_by_category.pdf")
+    plt.savefig("density_by_category.pdf")
 
 
 def get_densities(subsets, tracks):
