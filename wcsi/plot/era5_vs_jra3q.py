@@ -10,11 +10,12 @@ from scipy.stats import linregress
 from tqdm import tqdm
 
 from wcsi.scripts.statistics import get_stats
+from wcsi.summary import filters
 
 from .max_intensity_by_category import bins
 from .roebber import colors
 
-colors = colors[[1, 4]]
+colors = colors[[3, 4]]
 half_window = 5
 
 # Klotzbach pressure categories
@@ -92,7 +93,6 @@ def main(summary, matched_lmi):
     )
     fig.text(0.925, 0.4, "Pressure category", rotation=270, va="center")
     fig.autofmt_xdate()
-    fig.suptitle("ERA5 vs JRA3Q")
 
     plt.savefig("era5_vs_jra3q.pdf")
 
@@ -124,23 +124,17 @@ def get_venn_counts(summary):
     # 100 - Only ERA5
     summary_ = summary[is_era5 & ~is_jra3q & ~is_ibtracs]
     sets.append(len(np.unique(summary_.id_era5)))
-    invest_counts.append(
-        summary_[summary_.id_superbt_era5 != ""].id_superbt_era5.nunique()
-    )
+    invest_counts.append(summary_[summary_.id_superbt_era5 != ""].id_era5.nunique())
 
     # 010 - Only JRA3Q
     summary_ = summary[~is_era5 & is_jra3q & ~is_ibtracs]
     sets.append(len(np.unique(summary_.id_jra3q)))
-    invest_counts.append(
-        summary_[summary_.id_superbt_jra3q != ""].id_superbt_jra3q.nunique()
-    )
+    invest_counts.append(summary_[summary_.id_superbt_jra3q != ""].id_jra3q.nunique())
 
     # 110 - ERA5 and JRA3Q
     summary_ = summary[is_era5 & is_jra3q & ~is_ibtracs]
     sets.append(len(np.unique(summary_.id_era5)))
-    invest_counts.append(
-        summary_[summary_.id_superbt_era5 != ""].id_superbt_era5.nunique()
-    )
+    invest_counts.append(summary_[summary_.id_superbt_era5 != ""].id_era5.nunique())
 
     # Avoid double counting on IBTrACS IDs due to extra rows in table for SyCLoPS
     ibtracs_ids = np.unique(summary.id_ibtracs[is_ibtracs])
@@ -193,7 +187,13 @@ def get_venn_counts(summary):
 def plot_rolling_window(stats_datasets, axes, bins):
     for n, datasets in enumerate(stats_datasets):
         stats = stats_datasets[datasets]
-        for stat, linestyle in [("csi", "-"), ("pod", "--"), ("far", ":")]:
+        for stat, linestyle in [
+            ("csi", "-"),
+            ("pod", "--"),
+            ("far", ":"),
+            ("csi_invest", "-"),
+            ("far_invest", ":"),
+        ]:
             axes[0].fill_between(
                 stats.year,
                 stats[f"{stat}_low"],
@@ -232,7 +232,9 @@ def plot_rolling_window(stats_datasets, axes, bins):
         Line2D([0, 0], [0, 0], color="k", linestyle=l, label=label)
         for l, label in [("-", "CSI"), ("--", "POD"), (":", "FAR")]
     ]
-    axes[0].legend(handles=handles, loc="upper center", ncol=3)
+    axes[0].legend(
+        handles=handles, loc="lower left", ncol=3, columnspacing=1.5, handletextpad=0.5
+    )
 
     axes[0].set(
         xticklabels=[],
@@ -272,6 +274,11 @@ def plot_rolling_window(stats_datasets, axes, bins):
 def rolling_window_stats(summary, matched_lmi, half_window, datasets, bins):
     stats = {dataset: [] for dataset in datasets}
     for start_year in tqdm(range(1948, 2024 + 1 - 2 * half_window)):
+        if start_year >= 2007:
+            invests = True
+        else:
+            invests = False
+
         summary_ = filters.year(
             summary, start_year=start_year, end_year=start_year + 2 * half_window
         )
@@ -283,9 +290,13 @@ def rolling_window_stats(summary, matched_lmi, half_window, datasets, bins):
         total = summary_.id_ibtracs.nunique() - 1
         for dataset in datasets:
             if dataset == "era5":
-                stats_window = get_stats(summary_[summary_.WCSI], total, label=dataset)
+                stats_window = get_stats(
+                    summary_[summary_.WCSI], total, label=dataset, invests=invests
+                )
             else:
-                stats_window = get_stats(summary_, total, label=dataset)
+                stats_window = get_stats(
+                    summary_, total, label=dataset, invests=invests
+                )
             stats_window["year"] = start_year + half_window
 
             for m in range(len(bins) - 1):
@@ -336,8 +347,7 @@ def plot_matched_lmi(matched_lmi, datasets, axes):
 
 
 if __name__ == "__main__":
-    from wcsi.summary import filters
-
     summary = pd.read_parquet("WCSI_summary_all.parquet")
     matched_lmi = pd.read_parquet("matched_lmi.parquet")
+
     main(summary, matched_lmi)
