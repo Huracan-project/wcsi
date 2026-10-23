@@ -42,6 +42,7 @@ def main():
     ibtracs_summary.to_parquet("ibtracs_summary.parquet")
 
     # Save 6-hourly data
+    ibtracs = ibtracs.isel(record=ibtracs.time.dt.hour % 6 == 0)
     ibtracs.hrcn.save("IBTrACS.nc")
 
     # SuperBT
