@@ -111,7 +111,7 @@ def main():
             0, 1.05, f"({ascii_lowercase[n]})", transform=axes[n + 1].transAxes
         )
 
-    fig.savefig("roebber_2panel.pdf")
+    fig.savefig("roebber.pdf")
 
 
 def _main(stats, ax, marker="v", color=None):
