@@ -7,7 +7,6 @@ build:
   tools:
     python: "latest"
   apt_packages:
-    - gfortran
     - libgeos-dev
     - libproj-dev
     - libudunits2-dev
@@ -17,3 +16,10 @@ build:
 sphinx:
   configuration: docs/conf.py
   fail_on_warning: false
+
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
