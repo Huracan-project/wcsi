@@ -124,7 +124,25 @@ def _match_ibtracs(tracks, ibtracs, label):
         distance_method="geod",
     )
 
-    return matches
+    # Repeat for unmatched IBTrACS tracks using only TC nature
+    # Some well matched tracks in the TC stage divergence after extratropical transition
+    # They should be considered matches for this work
+    track_ids = np.unique(ibtracs.track_id)
+    track_ids = track_ids[~np.isin(track_ids, matches.id_ibtracs)]
+    ibtracs = ibtracs.hrcn.sel_id(track_ids)
+    ibtracs = ibtracs.isel(record=np.isin(ibtracs.nature, ["TS", "MX", "NR"]))
+
+    extra_matches = huracanpy.assess.match(
+        [tracks, ibtracs],
+        [label, "ibtracs"],
+        max_dist=None,
+        mean_dist=444,
+        distance_method="geod",
+    )
+
+    print(extra_matches)
+
+    return pd.concat([matches, extra_matches])
 
 
 def fix_columns(df):
