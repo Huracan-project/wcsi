@@ -54,7 +54,7 @@ natures = dict(
         TC=("Tropical", colors[6]),
         Tr=("Trough", colors[3]),
         Ot=("Other", colors[7]),
-        BC=("Asymmetric", colors[2]),
+        BC=("Baroclinic", colors[2]),
         MV=("Mid-level", colors[4]),
         Vo=("Vortex", colors[0]),
     ),
@@ -357,7 +357,7 @@ def mapplot(ax, track, linewidth, color_mapping, ax_legend=None, **kwargs):
         track.isel(
             record=slice(idx, min(idx + npoints + 1, len(track.time)))
         ).hrcn.plot_fancyline(
-            color=color_mapping[nat_][1],
+            colors=color_mapping[nat_][1],
             ax=ax,
             linewidths=linewidth,
             alphas=1,
