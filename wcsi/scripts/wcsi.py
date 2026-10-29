@@ -181,7 +181,7 @@ def main(
                 b=tracks[b_name].values,
                 vtl=tracks[vtl_name].values,
                 vtu=tracks[vtu_name].values,
-                vortex=tracks[closed_mslp_name].notnull().values,
+                vortex=tracks[closed_mslp_name].isnull().values,
                 wcsi=istc,
                 b_threshold=b_threshold,
                 vtl_threshold=vtl_threshold,

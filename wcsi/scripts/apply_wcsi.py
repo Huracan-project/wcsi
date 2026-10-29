@@ -64,8 +64,9 @@ def main(filename_in, filename_out=None):
             tracks.cps_b,
             tracks.cps_vtl,
             tracks.cps_vtu,
-            closed_mslp,
+            ~closed_mslp,
             tracks.wcsi,
+            min_count=2,
         ),
     )
 
