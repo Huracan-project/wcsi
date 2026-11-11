@@ -20,6 +20,13 @@ def wcsi(
     b_threshold: float | None = 15,
     vtl_threshold: float | None = 0,
     vtu_threshold: float | None = 0,
+    b_min: float | None = None,
+    b_max: float | None = None,
+    b_abs: bool = True,
+    vtl_min: float | None = None,
+    vtl_max: float | None = None,
+    vtu_min: float | None = None,
+    vtu_max: float | None = None,
     vort_threshold: float | None = 6,
     vort_warm_core_threshold: float | None = None,
     intensification_threshold: float | None = 0,
@@ -54,6 +61,21 @@ def wcsi(
         Minimum value of the cyclone phase space low-level warm core parameter
     vtu_threshold
         Minimum value of the cyclone phase space upper-level warm core parameter
+    b_min, b_max
+        Lower (exclusive) and upper (inclusive) bounds for the cyclone phase space
+        asymmetry parameter. If None, b_max inherits b_threshold and b_min is
+        unrestricted. An explicit b_max overrides b_threshold.
+    b_abs
+        Take the absolute value of cps_b before smoothing and thresholding.
+        Set to False to use signed values. Applies even when smoothing is disabled.
+    vtl_min, vtl_max
+        Lower (exclusive) and upper (inclusive) bounds for the cyclone phase space
+        low-level warm core parameter. If None, vtl_min inherits vtl_threshold and
+        vtl_max is unrestricted. An explicit vtl_min overrides vtl_threshold.
+    vtu_min, vtu_max
+        Lower (exclusive) and upper (inclusive) bounds for the cyclone phase space
+        upper-level warm core parameter. If None, vtu_min inherits vtu_threshold and
+        vtu_max is unrestricted. An explicit vtu_min overrides vtu_threshold.
     vort_threshold
         Minimum value of 850hPa vorticity. Default has units of 10e-5 s-1 following
         conventions from TRACK
@@ -77,6 +99,9 @@ def wcsi(
     An array with True where points are identified as WCSI
     """
 
+    if b_abs and cps_b is not None:
+        cps_b = np.abs(cps_b)
+
     # Apply smoothing
     if filter_size is not None and filter_size > 1:
         idx, inverse = padded_index(
@@ -85,7 +110,7 @@ def wcsi(
 
         if cps_b is not None:
             cps_b = uniform_filter1d(
-                track_id, np.abs(cps_b), size=filter_size, idx=idx, inverse=inverse
+                track_id, cps_b, size=filter_size, idx=idx, inverse=inverse
             )
         if cps_vtl is not None:
             cps_vtl = uniform_filter1d(
@@ -108,12 +133,23 @@ def wcsi(
     tc = np.ones(len(track_id), dtype=bool)
 
     # Cyclone Phase Space
-    if b_threshold is not None and cps_b is not None:
-        tc = tc & (cps_b <= b_threshold)
-    if vtl_threshold is not None and cps_vtl is not None:
-        tc = tc & (cps_vtl > vtl_threshold)
-    if vtu_threshold is not None and cps_vtu is not None:
-        tc = tc & (cps_vtu > vtu_threshold)
+    if b_max is None:
+        b_max = b_threshold
+    if vtl_min is None:
+        vtl_min = vtl_threshold
+    if vtu_min is None:
+        vtu_min = vtu_threshold
+
+    for values, lower, upper in (
+        (cps_b, b_min, b_max),
+        (cps_vtl, vtl_min, vtl_max),
+        (cps_vtu, vtu_min, vtu_max),
+    ):
+        if values is not None:
+            if lower is not None:
+                tc = tc & (values > lower)
+            if upper is not None:
+                tc = tc & (values <= upper)
 
     # Minimum vorticity
     if vort_threshold is not None and relative_vorticity is not None:
