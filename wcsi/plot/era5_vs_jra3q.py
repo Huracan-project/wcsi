@@ -4,12 +4,13 @@ from matplotlib.colors import BoundaryNorm
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 from matplotlib_venn import venn3
+from metpy.units import units
 import numpy as np
 import pandas as pd
-from scipy.stats import linregress
+from scipy.stats import linregress, bootstrap
 from tqdm import tqdm
 
-from wcsi.scripts.statistics import get_stats
+from wcsi.scripts.statistics import get_stats, statistic_with_errors
 from wcsi.summary import filters
 
 from .max_intensity_by_category import bins
@@ -17,6 +18,13 @@ from .roebber import colors
 
 colors = colors[[3, 4]]
 half_window = 5
+
+# Saffir-Simpson Categories
+category_bins = (
+    (np.asarray([-np.inf, 34, 64, 83, 96, 113, 137, np.inf]) * units("kts"))
+    .to("m s-1")
+    .magnitude
+)
 
 # Klotzbach pressure categories
 category_bins = np.asarray([-np.inf, 925, 945, 960, 975, 990, 1005, np.inf])
@@ -185,7 +193,20 @@ def get_venn_counts(summary):
 
 
 def plot_rolling_window(stats_datasets, axes, bins):
-    for n, datasets in enumerate(stats_datasets):
+    stats = stats_datasets["ibtracs"]
+    for stat in ["POD", "POD_lenient"]:
+        axes[0].fill_between(
+            stats_datasets["era5"].year,
+            stats[f"{stat}_low"],
+            stats[f"{stat}_high"],
+            color="k",
+            alpha=0.5,
+        )
+        axes[0].plot(
+            stats_datasets["era5"].year, stats[stat], color="k", linestyle="--"
+        )
+
+    for n, datasets in enumerate(["era5", "jra3q"]):
         stats = stats_datasets[datasets]
         for stat, linestyle in [
             ("csi", "-"),
@@ -207,10 +228,10 @@ def plot_rolling_window(stats_datasets, axes, bins):
         ax = axes[m + 2]
         ymin = np.inf
         ymax = -np.inf
-        for n, dataset in enumerate(stats_datasets):
+        for n, dataset in enumerate(["era5", "jra3q"]):
             stats = stats_datasets[dataset]
-            low_bound = stats[f"error_{m}"] - stats[f"confidence_{m}"]
-            high_bound = stats[f"error_{m}"] + stats[f"confidence_{m}"]
+            low_bound = stats[f"confidence_low_{m}"]
+            high_bound = stats[f"confidence_high_{m}"]
             ax.fill_between(
                 stats.year,
                 low_bound,
@@ -222,11 +243,19 @@ def plot_rolling_window(stats_datasets, axes, bins):
             ymin = min(ymin, np.floor(low_bound.min() / 5) * 5)
             ymax = max(ymax, np.ceil(high_bound.max() / 5) * 5)
         ax.set(ylim=[ymin, ymax], yticks=[ymin, ymax], xticks=[])
-        ax.set_ylabel(f" {5 - m}", rotation="horizontal")
+        if m == 6:
+            label = "  TD"
+        elif m == 5:
+            label = "  TS"
+        else:
+            label = f"  {5 - m}"
+        ax.set_ylabel(label, rotation="horizontal")
         ax.yaxis.set_label_position("right")
         ax.spines[["top", "bottom"]].set_visible(False)
         for y in range(int(ymin), int(ymax) + 1, 5):
             ax.axhline(y, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
+        if ymin < 0:
+            ax.axhline(0, color="k", zorder=-1, linewidth=0.5, alpha=0.5)
 
     handles = [
         Line2D([0, 0], [0, 0], color="k", linestyle=l, label=label)
@@ -254,7 +283,6 @@ def plot_rolling_window(stats_datasets, axes, bins):
     axes[-1].set(
         xlabel="Year (11-year rolling window)",
         xticks=xticks,
-        ylabel="",
     )
     axes[2].spines[["top"]].set_visible(True)
     axes[2].set_title("MSLP Error")
@@ -273,6 +301,9 @@ def plot_rolling_window(stats_datasets, axes, bins):
 
 def rolling_window_stats(summary, matched_lmi, half_window, datasets, bins):
     stats = {dataset: [] for dataset in datasets}
+    summary_ibtracs = pd.read_csv("ibtracs_intensifying.csv")
+    ibtracs_year = summary_ibtracs.id_ibtracs.str.slice(0, 4).astype(int)
+    stats["ibtracs"] = []
     for start_year in tqdm(range(1948, 2024 + 1 - 2 * half_window)):
         if start_year >= 2007:
             invests = True
@@ -307,12 +338,41 @@ def rolling_window_stats(summary, matched_lmi, half_window, datasets, bins):
                 errors = (
                     matched_lmi_category[f"mslp_{dataset}"]
                     - matched_lmi_category.mslp_ibtracs
-                )
-                stats_window[f"error_{m}"] = np.mean(errors)
-                stats_window[f"confidence_{m}"] = np.std(errors) / np.sqrt(len(errors))
+                ).dropna()
+                stats_window[f"error_{m}"] = errors.mean()
+
+                if len(errors) >= 2:
+                    confidence_interval = bootstrap(
+                        (errors.to_numpy(),), np.mean, n_resamples=1000
+                    ).confidence_interval
+                    stats_window[f"confidence_low_{m}"] = confidence_interval.low
+                    stats_window[f"confidence_high_{m}"] = confidence_interval.high
+                else:
+                    stats_window[f"confidence_low_{m}"] = np.nan
+                    stats_window[f"confidence_high_{m}"] = np.nan
 
             stats[dataset].append(stats_window)
 
+        summary_ = summary_ibtracs[
+            (ibtracs_year >= start_year)
+            & (ibtracs_year <= start_year + 2 * half_window)
+        ]
+        ibtracs_pod = dict()
+        statistic_with_errors(
+            ibtracs_pod,
+            "POD",
+            summary_[summary_.istc_ts].id_ibtracs.nunique(),
+            total,
+        )
+        statistic_with_errors(
+            ibtracs_pod,
+            "POD_lenient",
+            summary_[summary_.istc_flat].id_ibtracs.nunique(),
+            total - summary_[~summary_.nature_wind_sufficient].id_ibtracs.nunique(),
+        )
+        stats["ibtracs"].append(ibtracs_pod)
+
+    datasets.append("ibtracs")
     return {dataset: pd.DataFrame(stats[dataset]) for dataset in datasets}
 
 

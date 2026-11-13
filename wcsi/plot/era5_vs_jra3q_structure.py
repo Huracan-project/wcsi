@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.stats import bootstrap
 from tqdm import tqdm
 
 from .era5_vs_jra3q import colors, half_window, category_bins
@@ -63,13 +64,14 @@ def main(matched_lmi):
             ax.axvline(x, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
 
     for ax in axes[:, 0]:
-        ax.set_ylim(0, 15)
-        ax.set_yticks([0, 15])
-        for y in range(0, 15 + 1, 5):
+        ax.set_ylim(0, 20)
+        ax.set_yticks([0, 20])
+        for y in range(0, 20 + 1, 5):
             ax.axhline(y, color="k", zorder=-1, linewidth=0.1, alpha=0.5)
+        ax.axhline(15, color="k", zorder=-1)
 
     for m, (ymin, ymax) in enumerate(
-        [(50, 250), (50, 250), (0, 200), (0, 150), (0, 100), (0, 100), (-50, 100)]
+        [(50, 250), (50, 250), (0, 200), (0, 150), (0, 150), (-50, 100), (-50, 100)]
     ):
         for ax in axes[m, 1:]:
             ax.set_ylim(ymin, ymax)
@@ -84,6 +86,15 @@ def main(matched_lmi):
 
         axes[m, 2].set_yticks([])
 
+    for m in range(7):
+        if m < 5:
+            axes[m, -1].set_ylabel(f" {5 - m}", rotation="horizontal")
+        elif m == 5:
+            axes[m, -1].set_ylabel("  TS", rotation="horizontal")
+        elif m == 6:
+            axes[m, -1].set_ylabel("  TD", rotation="horizontal")
+        axes[m, -1].yaxis.set_label_position("right")
+
     for ax in axes[-1, :]:
         ax.set_xticks(xticks)
         ax.spines[["bottom"]].set_visible(True)
@@ -93,7 +104,6 @@ def main(matched_lmi):
     for ax in axes[0, :]:
         ax.spines[["top"]].set_visible(True)
 
-    axes[-1, 2].set_ylabel("")
     fig.text(0.925, 0.5, "Pressure category", rotation=270, va="center")
     fig.autofmt_xdate()
 
@@ -102,16 +112,14 @@ def main(matched_lmi):
 
 def plot_rolling_window(stats_datasets, axes, bins):
     for m in range(len(bins) - 1):
-        axes[m, -1].set_ylabel(f" {5 - m}", rotation="horizontal")
-        axes[m, -1].yaxis.set_label_position("right")
         for i, (var, yspace) in enumerate([("b", 5), ("vtl", 25), ("vtu", 25)]):
             ax = axes[m, i]
             ymin = np.inf
             ymax = -np.inf
             for n, dataset in enumerate(stats_datasets):
                 stats = stats_datasets[dataset]
-                low_bound = stats[f"{var}_{m}"] - stats[f"confidence_{var}_{m}"]
-                high_bound = stats[f"{var}_{m}"] + stats[f"confidence_{var}_{m}"]
+                low_bound = stats[f"confidence_low_{var}_{m}"]
+                high_bound = stats[f"confidence_high_{var}_{m}"]
                 ax.fill_between(
                     stats.year,
                     low_bound,
@@ -141,12 +149,23 @@ def rolling_window_stats(matched_lmi, half_window, datasets, bins):
                     & (matched_lmi_.mslp_ibtracs <= bins[m + 1])
                 ]
                 for var in ["b", "vtl", "vtu"]:
-                    values = matched_lmi_category[f"cps_{var}_{dataset}"]
+                    values = matched_lmi_category[f"cps_{var}_{dataset}"].dropna()
                     values = values[values != 1e25]
-                    stats_window[f"{var}_{m}"] = np.mean(values)
-                    stats_window[f"confidence_{var}_{m}"] = np.std(values) / np.sqrt(
-                        len(values)
-                    )
+                    stats_window[f"{var}_{m}"] = values.mean()
+
+                    if len(values) >= 2:
+                        confidence_interval = bootstrap(
+                            (values.to_numpy(),), np.mean, n_resamples=1000
+                        ).confidence_interval
+                        stats_window[f"confidence_low_{var}_{m}"] = (
+                            confidence_interval.low
+                        )
+                        stats_window[f"confidence_high_{var}_{m}"] = (
+                            confidence_interval.high
+                        )
+                    else:
+                        stats_window[f"confidence_low_{var}_{m}"] = np.nan
+                        stats_window[f"confidence_high_{var}_{m}"] = np.nan
 
             stats[dataset].append(stats_window)
 
