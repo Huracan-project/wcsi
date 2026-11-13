@@ -1,10 +1,11 @@
 from string import ascii_lowercase
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
+
+from wcsi.plot._colors import COLORS
 
 subsets = [
     ("era5_H2017", "H2017"),
@@ -14,7 +15,7 @@ subsets = [
     ("jra3q", "WCSI (JRA3Q)"),
 ]
 
-colors = mpl.colormaps["okabe_ito"](np.linspace(0, 1, 8))[2:]
+colors = COLORS[2:]
 
 
 def main():
@@ -115,7 +116,6 @@ def main():
 
 
 def _main(stats, ax, marker="v", color=None):
-
     for n, (subset, name) in enumerate(subsets):
         if color is None:
             c = colors[n]

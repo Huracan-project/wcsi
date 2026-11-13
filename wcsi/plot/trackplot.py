@@ -13,6 +13,7 @@ import seaborn as sb
 from scipy.ndimage import uniform_filter1d
 from tqdm import tqdm
 
+from wcsi.plot._colors import COLORS
 from wcsi.summary import filters
 
 app = App()
@@ -47,16 +48,15 @@ extents_default = dict(
 )
 
 # Colour for each cyclone category
-colors = mpl.colormaps["okabe_ito"](np.linspace(0, 1, 8))
 colors_m = sb.color_palette("muted")
 natures = dict(
     wcsi=dict(
-        TC=("Tropical", colors[6]),
-        Tr=("Trough", colors[3]),
-        Ot=("Other", colors[7]),
-        BC=("Baroclinic", colors[2]),
-        MV=("Mid-level", colors[4]),
-        Vo=("Vortex", colors[0]),
+        TC=("Tropical", COLORS[6]),
+        Tr=("Trough", COLORS[3]),
+        Ot=("Other", COLORS[7]),
+        BC=("Baroclinic", COLORS[2]),
+        MV=("Mid-level", COLORS[4]),
+        Vo=("Vortex", COLORS[0]),
     ),
     ibtracs=dict(
         TS=("Tropical", colors_m[1]),
