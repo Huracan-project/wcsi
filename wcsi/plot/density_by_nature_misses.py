@@ -32,7 +32,7 @@ def main():
 
         ibtracs = huracanpy.load("IBTrACS.nc")
         ibtracs = ibtracs.hrcn.sel_id(misses.id_ibtracs)
-        ibtracs = ibtracs.isel(record=np.isin(ibtracs.nature, ["TS", "MX", "NR"]))
+        ibtracs = ibtracs.isel(record=np.isin(ibtracs.nature, ["TS", "MX", "NR", "DS"]))
 
         df_ibtracs = ibtracs[["track_id", "lon", "lat", "time"]].to_dataframe()
         df_era5 = tracks[["track_id", "lon", "lat", "time", "nature"]].to_dataframe()
