@@ -61,25 +61,20 @@ def main():
         stats.to_csv(f"WCSI_scores_{basin}_invests_2007-2024.csv")
 
     # Repeat for IBTrACS >= 34kts
-    track_ids = np.unique(ibtracs.track_id[ibtracs.wind > 17])
     summary_ = summary.copy()
-    summary_.loc[~np.isin(summary_.id_ibtracs, track_ids), "id_ibtracs"] = ""
+    summary_.loc[~(summary_.ibtracs_category > -1), "id_ibtracs"] = ""
     _main(summary_, start_year=1979, invests=False).to_csv(
         "WCSI_scores_34kts_1979-2024.csv"
     )
 
     # IBTrACS < 34 kts
-    summary = summary[~np.isin(summary.id_ibtracs, track_ids)]
-    ibtracs = ibtracs.isel(record=~np.isin(ibtracs.track_id, track_ids))
-
-    track_ids = np.unique(ibtracs.track_id[~np.isnan(ibtracs.wind)])
     _main(
-        summary[np.isin(summary.id_ibtracs, track_ids)], start_year=1979, invests=False
+        summary[summary_.ibtracs_category == -1], start_year=1979, invests=False
     ).to_csv("WCSI_scores_weak_1979-2024.csv")
 
     # IBTrACS no valid wind data
     _main(
-        summary[~np.isin(summary.id_ibtracs, track_ids)], start_year=1979, invests=False
+        summary[summary_.ibtracs_category.isnull()], start_year=1979, invests=False
     ).to_csv("WCSI_scores_nowind_1979-2024.csv")
 
 
@@ -93,7 +88,7 @@ def _main(
 
     tracks = ["era5", "jra3q", "syclops"]
 
-    total = summary.id_ibtracs.nunique() - 1
+    total = summary[summary.id_ibtracs != ""].id_ibtracs.nunique()
 
     stats = []
     for name in tracks:
