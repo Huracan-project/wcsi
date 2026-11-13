@@ -20,6 +20,11 @@ columns = {
     "temp": (int, 0),
     "ibtracs_nature": (str, ""),
     "ibtracs_points_6h": (int, 0),
+    "ibtracs_points_6h_wind": (int, 0),
+    "ibtracs_points_6h_mslp": (int, 0),
+    "ibtracs_agency_6h_wind": (str, ""),
+    "ibtracs_agency_6h_mslp": (str, ""),
+    "ibtracs_track_type": (str, ""),
 }
 
 
