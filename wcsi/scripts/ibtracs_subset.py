@@ -79,14 +79,14 @@ def main():
     ibtracs.hrcn.save("IBTrACS.nc")
 
     # SuperBT
-    # superbt = huracanpy.load(source="superbt").rename(
-    #     tccode="nature", vmax="wind", pmin="mslp"
-    # )
-    # superbt["wind"] = (
-    #     "record",
-    #     superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values,
-    # )
-    # superbt.hrcn.save("superbt.nc")
+    superbt = huracanpy.load(source="superbt").rename(
+        tccode="nature", vmax="wind", pmin="mslp"
+    )
+    superbt["wind"] = (
+        "record",
+        superbt.wind.metpy.convert_units("m s-1").metpy.dequantify().values,
+    )
+    superbt.hrcn.save("superbt.nc")
 
 
 def fill_wind_pressure(ibtracs):
