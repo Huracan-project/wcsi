@@ -77,7 +77,7 @@ def main():
 
     fig.subplots_adjust(bottom=0.15)
     cbar_ax = fig.add_axes((0.1, 0.05, 0.8, 0.05))
-    fig.colorbar(im, cax=cbar_ax, orientation="horizontal")
+    fig.colorbar(im, cax=cbar_ax, orientation="horizontal", label="Number of tracks")
 
     plt.savefig("density_by_category.pdf")
 
